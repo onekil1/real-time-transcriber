@@ -1,0 +1,42 @@
+[project]
+name = "meeting-scribe"
+version = "0.1.0"
+description = "Локальная транскрибация совещаний + автогенерация отчётов (macOS Apple Silicon / Windows + NVIDIA)"
+requires-python = ">=3.10,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.9",
+    "sounddevice>=0.5.1",
+    "soundfile>=0.12.1",
+    "numpy>=1.26,<2.3",
+    "pydantic>=2.8",
+    "sse-starlette>=2.1",
+    "requests>=2.32",
+    "python-docx>=1.1",
+    # macOS (Apple Silicon) — ASR через MLX + menubar через rumps/AppKit
+    "mlx-whisper>=0.4.2; sys_platform == 'darwin'",
+    "silero-vad>=5.0; sys_platform == 'darwin'",
+    "rumps>=0.4.0; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
+    # Windows (NVIDIA / CPU) — ASR через faster-whisper на CTranslate2
+    "faster-whisper>=1.0; sys_platform == 'win32'",
+    "ctranslate2>=4.4; sys_platform == 'win32'",
+]
+
+[project.optional-dependencies]
+dev = ["ruff>=0.6", "pytest>=8.0"]
+
+[project.scripts]
+meeting-scribe = "run:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["prompts/*.txt"]

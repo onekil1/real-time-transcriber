@@ -1,0 +1,22 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+data/
+.env
+.DS_Store
+build/
+dist/
+
+# Whisper model files — большие бинарники, раздаются вне репо
+models/whisper/**/*.safetensors
+models/whisper/**/*.npz
+models/whisper/**/*.bin
+models/whisper/**/weights.*
+models/whisper/**/model.bin
+
+# Локальные установочные артефакты
+start.bat
+*.log
+.claude/

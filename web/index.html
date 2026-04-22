@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Транскрибатор (real-time)</title>
+
+<link rel="stylesheet" href="styles.css?v=27" />
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar">
+    <header class="brand">
+      <h1>🎙 Транскрибатор (real-time)</h1>
+      <div class="tmpl-header">Выберите тип мероприятия</div>
+      <div id="tmpl-new" class="tmpl-chips" data-role="new" title="Тип новой сессии"></div>
+      <div class="controls">
+        <button id="btn-rec" class="primary">● Записать</button>
+        <label class="upload">
+          ↑ Файл
+          <input type="file" id="file-input" accept="audio/*,video/*" hidden />
+        </label>
+      </div>
+    </header>
+    <ul id="sessions" class="sessions"></ul>
+    <button id="btn-glossary-open" class="glossary-open" title="Словарь имён и терминов для Whisper — применяется ко всем сессиям">
+      📖 Глоссарий (Whisper)
+    </button>
+    <div id="health" class="health" title="Проверить состояние сервисов">
+      <div id="progress" class="progress"></div>
+      <span class="h-row">
+        <span class="h-dot" data-k="whisper"></span>Whisper v3 Large
+        <span class="h-activity" data-k="whisper"></span>
+        <span class="h-note" data-k="whisper">…</span>
+      </span>
+      <span class="h-row">
+        <span class="h-dot" data-k="llm"></span>LM Studio
+        <span class="h-activity" data-k="llm"></span>
+        <span class="h-note" data-k="llm">…</span>
+      </span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div id="empty" class="empty">Выберите сессию или начните новую запись.</div>
+
+    <section id="glossary-view" class="glossary-view hidden">
+      <header class="detail-head">
+        <div class="head-title">
+          <h2>Глоссарий (Whisper)</h2>
+          <div class="meta">
+            Имена, аббревиатуры и специфичные термины. Whisper будет знать, как они пишутся —
+            меньше ошибок на собственных именах. Применяется ко всем сессиям автоматически.
+          </div>
+        </div>
+      </header>
+      <div class="glossary-body">
+        <textarea
+          id="glossary-text"
+          spellcheck="false"
+          placeholder="Напр.: Иван Петров, Мария Сидорова, проект Феникс, API Gateway, SLA, SRE, RTO, RPO"
+        ></textarea>
+        <div class="glossary-counter">
+          <span id="glossary-count">0</span> / ~500 символов
+          <span class="muted"> — у Whisper лимит ~224 токена (≈400–600 символов для смешанного русского/английского). Всё, что сверх, будет тихо обрезано.</span>
+        </div>
+        <div class="toolbar">
+          <button id="btn-glossary-save" class="primary">Сохранить</button>
+          <button id="btn-glossary-close">Закрыть</button>
+          <span class="glossary-status muted"></span>
+        </div>
+      </div>
+    </section>
+
+
+    <section id="detail" class="detail hidden">
+      <header class="detail-head">
+        <div class="head-title">
+          <h2 id="title"></h2>
+          <input id="title-input" type="text" class="hidden" spellcheck="false" />
+          <div id="meta" class="meta"></div>
+        </div>
+
+        <div class="head-groups">
+          <section class="head-group">
+            <span class="head-group-label">Функции</span>
+            <div class="head-group-body stack">
+              <div class="head-row">
+                <button id="btn-rename" title="Переименовать сессию">Переименовать</button>
+                <button id="btn-sum-now" title="Сформировать промежуточный отчёт без остановки записи">Промежуточный отчёт</button>
+                <button id="btn-docx" title="Экспортировать отчёт в DOCX">Экспорт в DOCX</button>
+              </div>
+              <div class="head-row end">
+                <button id="btn-delete" class="danger" title="Удалить сессию">Удалить</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="head-group">
+            <span class="head-group-label">Пересборка</span>
+            <div class="head-group-body side-action">
+              <div id="tmpl-current" class="tmpl-chips" data-role="current" title="Тип сессии"></div>
+              <button id="btn-regen">↻ Пересобрать отчёт<br><span class="btn-note">прошлый отчёт будет удалён</span></button>
+            </div>
+          </section>
+
+        </div>
+      </header>
+
+      <nav class="tabs">
+        <button data-tab="preview" class="active">Отчёт</button>
+        <button data-tab="edit">Редактор</button>
+        <button data-tab="transcript">Транскрипт</button>
+        <button data-tab="audio">Аудио</button>
+      </nav>
+
+      <section id="tab-preview" class="tab active">
+        <div class="toolbar">
+          <button id="btn-copy-report">Скопировать</button>
+          <span class="save-status muted"></span>
+        </div>
+        <div id="report-preview" class="preview"></div>
+      </section>
+
+      <section id="tab-edit" class="tab">
+        <div class="toolbar">
+          <button id="btn-save-report">Сохранить</button>
+          <span class="save-status muted"></span>
+        </div>
+        <textarea id="report-md" spellcheck="false" placeholder="Отчёт появится здесь после обработки…"></textarea>
+      </section>
+
+      <section id="tab-transcript" class="tab">
+        <div id="transcript" class="transcript"></div>
+      </section>
+
+      <section id="tab-audio" class="tab">
+        <audio id="audio" controls></audio>
+      </section>
+    </section>
+  </main>
+</div>
+<script src="app.js?v=16" defer></script>
+</body>
+</html>
