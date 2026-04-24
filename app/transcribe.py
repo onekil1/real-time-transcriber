@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -277,6 +279,11 @@ def _mlx_transcribe(
     source = speech_wav if status == "ok" else wav_path
 
     pre = _preprocess_audio(Path(source))
+    t0 = time.monotonic()
+    print(
+        f"[ASR] Транскрибация аудио (модель локально, {whisper_model_ref()})...",
+        file=sys.stderr, flush=True,
+    )
     try:
         result = mlx_whisper.transcribe(
             str(pre),
@@ -293,6 +300,10 @@ def _mlx_transcribe(
         _cleanup_preprocessed(Path(source), pre)
         if speech_wav is not None:
             _cleanup_preprocessed(wav_path, speech_wav)
+        print(
+            f"[ASR] Транскрибация завершена за {time.monotonic() - t0:.1f}s",
+            file=sys.stderr, flush=True,
+        )
     segments = result.get("segments", []) or []
     for s in segments:
         s["words"] = _normalize_words(s.get("words"))
@@ -337,6 +348,11 @@ def _faster_transcribe(
 ) -> dict[str, Any]:
     model = _faster_get_model()
     pre = _preprocess_audio(Path(wav_path))
+    t0 = time.monotonic()
+    print(
+        f"[ASR] Транскрибация аудио (модель локально, {whisper_model_ref()})...",
+        file=sys.stderr, flush=True,
+    )
     try:
         segments_iter, info = model.transcribe(
             str(pre),
@@ -362,6 +378,10 @@ def _faster_transcribe(
         ]
     finally:
         _cleanup_preprocessed(Path(wav_path), pre)
+        print(
+            f"[ASR] Транскрибация завершена за {time.monotonic() - t0:.1f}s",
+            file=sys.stderr, flush=True,
+        )
     text = " ".join(s["text"] for s in segs).strip()
     return {"text": text, "segments": segs, "language": info.language or language}
 
