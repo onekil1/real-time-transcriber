@@ -5,11 +5,16 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Транскрибатор (real-time)</title>
 
-<link rel="stylesheet" href="styles.css?v=27" />
+<link rel="stylesheet" href="styles.css?v=28" />
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
 </head>
 <body>
 <div id="app">
+  <div id="update-banner" class="update-banner hidden">
+    <span class="upd-text"></span>
+    <button id="btn-update-apply" class="primary">Обновить</button>
+    <button id="btn-update-later">Позже</button>
+  </div>
   <aside class="sidebar">
     <header class="brand">
       <h1>🎙 Транскрибатор (real-time)</h1>
@@ -141,6 +146,6 @@
     </section>
   </main>
 </div>
-<script src="app.js?v=16" defer></script>
+<script src="app.js?v=17" defer></script>
 </body>
 </html>

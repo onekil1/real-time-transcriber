@@ -501,6 +501,18 @@ def session_docx(session_id: str):
     )
 
 
+@app.get("/api/update/check")
+def update_check():
+    from . import updater
+    return updater.check()
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    from . import updater
+    return updater.apply()
+
+
 @app.get("/api/health")
 def health():
     from . import summarize, transcribe

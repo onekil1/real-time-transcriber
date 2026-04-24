@@ -530,9 +530,66 @@ $("#health").addEventListener("click", async () => {
   }
 });
 
+// ---------- обновления ----------
+
+const UPDATE_DISMISS_KEY = "ms_update_dismissed";
+
+async function checkForUpdate() {
+  let info;
+  try {
+    info = await api("/api/update/check");
+  } catch {
+    return;
+  }
+  if (!info.available) return;
+  if (sessionStorage.getItem(UPDATE_DISMISS_KEY) === info.latest) return;
+
+  const banner = $("#update-banner");
+  $("#update-banner .upd-text").innerHTML =
+    `Доступна новая версия <b>${escapeHtml(info.latest)}</b> (текущая ${escapeHtml(info.current)}).`;
+  banner.classList.remove("hidden");
+
+  $("#btn-update-later").onclick = () => {
+    sessionStorage.setItem(UPDATE_DISMISS_KEY, info.latest);
+    banner.classList.add("hidden");
+  };
+
+  $("#btn-update-apply").onclick = async () => {
+    const notes = info.body ? `\n\nПримечания к релизу:\n${info.body.slice(0, 400)}` : "";
+    if (!confirm(
+      `Установить версию ${info.latest}?\n\nБудет выполнено git pull + uv sync. ` +
+      `После установки нужно перезапустить приложение вручную.${notes}`
+    )) return;
+
+    const btn = $("#btn-update-apply");
+    btn.disabled = true;
+    btn.textContent = "Обновляю…";
+    try {
+      const res = await api("/api/update/apply", { method: "POST" });
+      if (res.ok) {
+        $("#update-banner .upd-text").textContent =
+          `Версия ${info.latest} установлена. Перезапустите приложение.`;
+        btn.classList.add("hidden");
+        $("#btn-update-later").textContent = "Закрыть";
+      } else {
+        const log = (res.log || []).map((s) => `$ ${s.cmd}\n${s.stderr || s.stdout}`).join("\n\n");
+        alert(`Ошибка на этапе «${res.step}»:\n\n${log}`);
+        btn.disabled = false;
+        btn.textContent = "Обновить";
+      }
+    } catch (e) {
+      alert("Не удалось обновить: " + e.message);
+      btn.disabled = false;
+      btn.textContent = "Обновить";
+    }
+  };
+}
+
 // ---------- init ----------
 
 loadTemplates().then(loadSessions);
 loadHealth();
+checkForUpdate();
 setInterval(loadSessions, 5000);
 setInterval(loadHealth, 15000);
+setInterval(checkForUpdate, 60 * 60 * 1000);
