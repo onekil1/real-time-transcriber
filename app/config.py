@@ -68,6 +68,10 @@ LLM_CHUNK_CHARS = int(os.environ.get("MEETING_SCRIBE_LLM_CHUNK_CHARS", "8000"))
 SAMPLE_RATE = 48000
 CHANNELS = 1
 
+# ffmpeg-препроцессинг перед Whisper: highpass + spectral denoise + нормализация.
+# Заодно ресемплинг в 16 kHz mono — Whisper всё равно ресемплит внутри.
+DENOISE = os.environ.get("MEETING_SCRIBE_DENOISE", "1").lower() not in ("0", "false", "no", "")
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 WEB_DIR = PROJECT_ROOT / "web"
 PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"

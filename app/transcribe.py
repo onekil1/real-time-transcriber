@@ -13,6 +13,7 @@ from .config import (
     ASR_BACKEND,
     ASR_COMPUTE_TYPE,
     ASR_DEVICE,
+    DENOISE,
     LOCAL_WHISPER_DIR,
     SAMPLE_RATE,
     WHISPER_MODEL,
@@ -110,42 +111,74 @@ def ensure_wav(src: Path) -> Path:
     return tmp
 
 
-def _filter_segments(raw_segments) -> list[dict[str, Any]]:
-    raw_list = list(raw_segments)
-    # ВРЕМЕННАЯ ДИАГНОСТИКА: показать сырой выход модели до фильтрации.
-    import sys
-    raw_texts = [str(s.get("text", "")).strip() for s in raw_list]
-    print(
-        f"[ASR raw] segments={len(raw_list)} texts={raw_texts!r}",
-        file=sys.stderr, flush=True,
-    )
+def _preprocess_audio(src: Path) -> Path:
+    """Денойз + ресемплинг в 16 kHz mono перед Whisper.
+
+    Возвращает путь к обработанному WAV (во временной папке) или исходник,
+    если ffmpeg недоступен / препроцессинг отключён / упала команда.
+    Вызывающий обязан удалить результат, если он отличается от src.
+    """
+    if not DENOISE or not _have_ffmpeg():
+        return src
+    try:
+        tmp_dir = Path(tempfile.mkdtemp(prefix="dn_"))
+        out = tmp_dir / (src.stem + "_dn.wav")
+        cmd = [
+            "ffmpeg", "-y", "-i", str(src),
+            "-af", "highpass=f=80,afftdn=nr=12,dynaudnorm=f=200:g=15",
+            "-ac", "1", "-ar", "16000",
+            "-loglevel", "error",
+            str(out),
+        ]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=120)
+        return out
+    except Exception:
+        return src
+
+
+def _cleanup_preprocessed(orig: Path, processed: Path) -> None:
+    if processed == orig:
+        return
+    try:
+        processed.unlink(missing_ok=True)
+        processed.parent.rmdir()
+    except Exception:
+        pass
+
+
+def _normalize_words(words) -> list[dict[str, Any]]:
+    """Привести список слов из mlx/faster к единому виду."""
     out: list[dict[str, Any]] = []
-    dropped_halluc = 0
-    dropped_empty = 0
-    dropped_dup = 0
-    last_text = ""
-    for s in raw_list:
-        text = str(s.get("text", "")).strip()
+    for w in words or []:
+        if isinstance(w, dict):
+            text = str(w.get("word", ""))
+            start = float(w.get("start", 0.0))
+            end = float(w.get("end", 0.0))
+        else:
+            # faster-whisper Word: .word, .start, .end
+            text = str(getattr(w, "word", ""))
+            start = float(getattr(w, "start", 0.0) or 0.0)
+            end = float(getattr(w, "end", 0.0) or 0.0)
         if not text:
-            dropped_empty += 1
             continue
-        if _is_hallucination(text):
-            dropped_halluc += 1
-            continue
-        if text == last_text:
-            dropped_dup += 1
+        out.append({"word": text, "start": start, "end": end})
+    return out
+
+
+def _filter_segments(raw_segments) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    last_text = ""
+    for s in raw_segments:
+        text = str(s.get("text", "")).strip()
+        if not text or _is_hallucination(text) or text == last_text:
             continue
         out.append({
             "start": float(s.get("start", 0.0)),
             "end": float(s.get("end", 0.0)),
             "text": text,
+            "words": s.get("words", []),
         })
         last_text = text
-    print(
-        f"[ASR filt] kept={len(out)} empty={dropped_empty} "
-        f"halluc={dropped_halluc} dup={dropped_dup}",
-        file=sys.stderr, flush=True,
-    )
     return out
 
 
@@ -191,7 +224,7 @@ def _silero_extract_speech(
     if model is None:
         return ("skip", None, None)
     try:
-        import torch  # noqa: F401 (silero тянет torch как транзитив)
+        import torch
         from silero_vad import get_speech_timestamps, read_audio
 
         wav = read_audio(str(wav_path), sampling_rate=16000)
@@ -204,15 +237,13 @@ def _silero_extract_speech(
         if not ts:
             return ("empty", None, None)
 
-        import torch as _t
-
         pieces = [wav[t["start"]:t["end"]] for t in ts]
         offsets: list[tuple[float, float]] = []
         cum_samples = 0
         for t, piece in zip(ts, pieces):
             offsets.append((cum_samples / 16000.0, t["start"] / 16000.0))
             cum_samples += piece.shape[0]
-        concat = _t.cat(pieces)
+        concat = torch.cat(pieces)
 
         tmp_dir = Path(tempfile.mkdtemp(prefix="vad_"))
         tmp = tmp_dir / "speech.wav"
@@ -245,22 +276,33 @@ def _mlx_transcribe(
         return {"text": "", "segments": [], "language": language}
     source = speech_wav if status == "ok" else wav_path
 
-    result = mlx_whisper.transcribe(
-        str(source),
-        path_or_hf_repo=whisper_model_ref(),
-        language=language,
-        task="transcribe",
-        word_timestamps=False,
-        initial_prompt=_build_initial_prompt(glossary),
-        condition_on_previous_text=False,
-        temperature=_ASR_TEMPERATURES,
-        verbose=False,
-    )
+    pre = _preprocess_audio(Path(source))
+    try:
+        result = mlx_whisper.transcribe(
+            str(pre),
+            path_or_hf_repo=whisper_model_ref(),
+            language=language,
+            task="transcribe",
+            word_timestamps=True,
+            initial_prompt=_build_initial_prompt(glossary),
+            condition_on_previous_text=False,
+            temperature=_ASR_TEMPERATURES,
+            verbose=False,
+        )
+    finally:
+        _cleanup_preprocessed(Path(source), pre)
+        if speech_wav is not None:
+            _cleanup_preprocessed(wav_path, speech_wav)
     segments = result.get("segments", []) or []
+    for s in segments:
+        s["words"] = _normalize_words(s.get("words"))
     if status == "ok" and offsets:
         for s in segments:
             s["start"] = _remap_time(float(s.get("start", 0.0)), offsets)
             s["end"] = _remap_time(float(s.get("end", 0.0)), offsets)
+            for w in s["words"]:
+                w["start"] = _remap_time(w["start"], offsets)
+                w["end"] = _remap_time(w["end"], offsets)
     return {
         "text": (result.get("text") or "").strip(),
         "segments": segments,
@@ -294,23 +336,32 @@ def _faster_transcribe(
     wav_path: Path, language: str | None, glossary: str | None = None
 ) -> dict[str, Any]:
     model = _faster_get_model()
-    segments_iter, info = model.transcribe(
-        str(wav_path),
-        language=language,
-        task="transcribe",
-        initial_prompt=_build_initial_prompt(glossary),
-        condition_on_previous_text=False,
-        word_timestamps=False,
-        beam_size=5,
-        temperature=_ASR_TEMPERATURES,
-        vad_filter=True,
-        vad_parameters={"min_silence_duration_ms": 500},
-        hotwords=(glossary or None),
-    )
-    segs = [
-        {"start": float(s.start), "end": float(s.end), "text": (s.text or "").strip()}
-        for s in segments_iter
-    ]
+    pre = _preprocess_audio(Path(wav_path))
+    try:
+        segments_iter, info = model.transcribe(
+            str(pre),
+            language=language,
+            task="transcribe",
+            initial_prompt=_build_initial_prompt(glossary),
+            condition_on_previous_text=False,
+            word_timestamps=True,
+            beam_size=5,
+            temperature=_ASR_TEMPERATURES,
+            vad_filter=True,
+            vad_parameters={"min_silence_duration_ms": 500},
+            hotwords=(glossary or None),
+        )
+        segs = [
+            {
+                "start": float(s.start),
+                "end": float(s.end),
+                "text": (s.text or "").strip(),
+                "words": _normalize_words(getattr(s, "words", None)),
+            }
+            for s in segments_iter
+        ]
+    finally:
+        _cleanup_preprocessed(Path(wav_path), pre)
     text = " ".join(s["text"] for s in segs).strip()
     return {"text": text, "segments": segs, "language": info.language or language}
 
@@ -327,7 +378,6 @@ def _backend_transcribe(
 
 def transcribe_chunk(
     wav_path: Path,
-    prior_text: str = "",  # не используется — оставлен для совместимости
     language: str | None = "ru",
     glossary: str | None = None,
 ) -> list[dict[str, Any]]:

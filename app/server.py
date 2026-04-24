@@ -168,7 +168,6 @@ def _consume_chunks(session_id: str) -> None:
     from . import settings, transcribe
 
     glossary = settings.get_glossary()
-    prior_text = ""
     processed = 0
     while True:
         item = recorder.chunk_queue.get()
@@ -179,24 +178,29 @@ def _consume_chunks(session_id: str) -> None:
 
         bus.publish(session_id, "asr:chunk_start", None, chunk=item.idx)
         with _busy("whisper", session_id):
-            segs = transcribe.transcribe_chunk(
-                item.path, prior_text=prior_text, glossary=glossary
-            )
+            segs = transcribe.transcribe_chunk(item.path, glossary=glossary)
         abs_segs = [
             {
                 "start": item.start_sec + s["start"],
                 "end": item.start_sec + s["end"],
                 "text": s["text"],
+                "words": [
+                    {
+                        "word": w["word"],
+                        "start": item.start_sec + w["start"],
+                        "end": item.start_sec + w["end"],
+                    }
+                    for w in s.get("words", [])
+                ],
             }
             for s in segs
         ]
         last_end = storage.last_segment_end(session_id)
-        new_segs = [s for s in abs_segs if s["end"] > last_end + 0.1 and s["text"]]
+        new_segs = _dedup_overlap(abs_segs, last_end)
 
         if new_segs:
             storage.append_segments(session_id, new_segs)
             added_text = " ".join(s["text"] for s in new_segs)
-            prior_text = (prior_text + " " + added_text)[-1500:]
             bus.publish(
                 session_id,
                 "asr:partial",
@@ -221,6 +225,30 @@ def _consume_chunks(session_id: str) -> None:
             chunks_dir.rmdir()
     except Exception:
         pass
+
+
+def _dedup_overlap(segs: list[dict[str, Any]], last_end: float) -> list[dict[str, Any]]:
+    """Отрезать у каждого сегмента слова, начавшиеся раньше last_end (зона overlap'а),
+    и собрать чистый текст. Если у сегмента нет word-таймингов — fallback на старое
+    правило по концу сегмента."""
+    TOL = 0.15
+    out: list[dict[str, Any]] = []
+    for s in segs:
+        if not s.get("text"):
+            continue
+        words = s.get("words") or []
+        if not words:
+            if s["end"] > last_end + 0.1:
+                out.append({"start": s["start"], "end": s["end"], "text": s["text"]})
+            continue
+        kept = [w for w in words if w["start"] >= last_end - TOL]
+        if not kept:
+            continue
+        text = "".join(w["word"] for w in kept).strip()
+        if not text:
+            continue
+        out.append({"start": kept[0]["start"], "end": kept[-1]["end"], "text": text})
+    return out
 
 
 async def _summarize(session_id: str) -> None:

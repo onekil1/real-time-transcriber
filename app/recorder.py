@@ -169,7 +169,6 @@ class Recorder:
 
         # Кольцевой буфер последних 2с для seed'а следующего чанка
         ring = np.zeros((overlap_frames, CHANNELS), dtype="int16")
-        ring_pos = 0
 
         while not (self._stop_event.is_set() and self._frame_q.empty()):
             try:
@@ -189,7 +188,6 @@ class Recorder:
             n = block.shape[0]
             if n >= overlap_frames:
                 ring = block[-overlap_frames:].copy()
-                ring_pos = 0
             else:
                 take = overlap_frames - n
                 ring = np.concatenate([ring[-take:], block], axis=0)
