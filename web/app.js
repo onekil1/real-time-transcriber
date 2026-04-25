@@ -597,31 +597,64 @@ async function checkForUpdate() {
   $("#btn-update-apply").onclick = async () => {
     const notes = info.body ? `\n\nПримечания к релизу:\n${info.body.slice(0, 400)}` : "";
     if (!confirm(
-      `Установить версию ${info.latest}?\n\nБудет выполнено git pull + uv sync. ` +
+      `Установить версию ${info.latest}?\n\nБудет выполнено git fetch + merge + uv sync. ` +
       `После установки нужно перезапустить приложение вручную.${notes}`
     )) return;
 
     const btn = $("#btn-update-apply");
     btn.disabled = true;
     btn.textContent = "Обновляю…";
-    try {
-      const res = await api("/api/update/apply", { method: "POST" });
-      if (res.ok) {
-        $("#update-banner .upd-text").textContent =
-          `Версия ${info.latest} установлена. Перезапустите приложение.`;
-        btn.classList.add("hidden");
-        $("#btn-update-later").textContent = "Закрыть";
-      } else {
-        const log = (res.log || []).map((s) => `$ ${s.cmd}\n${s.stderr || s.stdout}`).join("\n\n");
-        alert(`Ошибка на этапе «${res.step}»:\n\n${log}`);
-        btn.disabled = false;
-        btn.textContent = "Обновить";
-      }
-    } catch (e) {
-      alert("Не удалось обновить: " + e.message);
-      btn.disabled = false;
-      btn.textContent = "Обновить";
+
+    const upd = $("#update-banner");
+    upd.classList.add("updating");
+    let progEl = upd.querySelector(".upd-progress");
+    if (!progEl) {
+      progEl = document.createElement("div");
+      progEl.className = "upd-progress";
+      progEl.innerHTML = '<div class="upd-step"></div><pre class="upd-log"></pre>';
+      upd.appendChild(progEl);
     }
+    const stepEl = progEl.querySelector(".upd-step");
+    const logEl  = progEl.querySelector(".upd-log");
+    stepEl.textContent = "Подключение…";
+    logEl.textContent  = "";
+
+    const es = new EventSource("/api/update/apply/stream");
+    es.onmessage = (ev) => {
+      const evt = JSON.parse(ev.data);
+      if (evt.type === "step") {
+        stepEl.textContent = `▶ ${evt.label}`;
+      } else if (evt.type === "line") {
+        logEl.textContent += evt.text + "\n";
+        logEl.scrollTop = logEl.scrollHeight;
+        // короткий summary для активной строки uv sync / git
+        const m = evt.text.match(/(?:Downloading|Resolving|Installing|Building)\s+([^\s]+)/i);
+        if (m) stepEl.textContent = `▶ ${m[0]}`;
+      } else if (evt.type === "step_done") {
+        const ok = evt.code === 0 ? "✓" : "✗";
+        logEl.textContent += `${ok} ${evt.label} (код ${evt.code})\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+      } else if (evt.type === "done") {
+        es.close();
+        if (evt.ok) {
+          $("#update-banner .upd-text").textContent =
+            `Версия ${info.latest} установлена. Перезапустите приложение.`;
+          stepEl.textContent = "✓ Готово";
+          btn.classList.add("hidden");
+          $("#btn-update-later").textContent = "Закрыть";
+        } else {
+          stepEl.textContent = `✗ Ошибка на этапе «${evt.step || "?"}»`;
+          btn.disabled = false;
+          btn.textContent = "Повторить";
+        }
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      stepEl.textContent = "✗ Соединение прервано";
+      btn.disabled = false;
+      btn.textContent = "Повторить";
+    };
   };
 }
 

@@ -72,6 +72,80 @@ _REMOTE_URL = f"https://github.com/{GITHUB_REPO}.git"
 _DEFAULT_BRANCH = "main"
 
 
+def _stream_command(cmd: list[str]):
+    """Запускает команду и стримит её stdout/stderr построчно. Yield-ит:
+      ("line", text) — строка вывода
+      ("done", returncode) — выход
+    """
+    p = subprocess.Popen(
+        cmd,
+        cwd=str(PROJECT_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        bufsize=1,
+        encoding="utf-8",
+        errors="replace",
+    )
+    assert p.stdout is not None
+    for line in p.stdout:
+        yield ("line", line.rstrip("\r\n"))
+    p.stdout.close()
+    code = p.wait()
+    yield ("done", code)
+
+
+def apply_stream():
+    """Стримит прогресс обновления через события:
+      {"type":"step",      "label": "git fetch origin main"}
+      {"type":"line",      "text": "..."}                       # stdout/stderr
+      {"type":"step_done", "label": "...", "code": 0}
+      {"type":"done",      "ok": True/False, "step"?, "message": "..."}
+    """
+    git_dir = PROJECT_ROOT / ".git"
+
+    if git_dir.exists():
+        steps: list[tuple[list[str], str]] = [
+            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
+            (["git", "merge", "--ff-only", f"origin/{_DEFAULT_BRANCH}"], "git merge"),
+        ]
+    else:
+        steps = [
+            (["git", "init"], "git init"),
+            (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
+            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
+            (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),
+            (["git", "branch", "--set-upstream-to",
+              f"origin/{_DEFAULT_BRANCH}", _DEFAULT_BRANCH], "git branch upstream"),
+        ]
+    steps.append((["uv", "sync"], "uv sync"))
+
+    for cmd, label in steps:
+        yield {"type": "step", "label": label, "cmd": " ".join(cmd)}
+        rc = 0
+        for kind, payload in _stream_command(cmd):
+            if kind == "line":
+                yield {"type": "line", "text": payload}
+            elif kind == "done":
+                rc = payload
+        yield {"type": "step_done", "label": label, "code": rc}
+        if rc != 0 and label != "git branch upstream":
+            yield {
+                "type": "done",
+                "ok": False,
+                "step": label,
+                "message": f"Шаг '{label}' завершился с кодом {rc}",
+            }
+            return
+
+    yield {
+        "type": "done",
+        "ok": True,
+        "message": "Обновление установлено. Перезапустите приложение.",
+        "version": current_version(),
+    }
+
+
 def apply() -> dict[str, Any]:
     """Обновляет рабочее дерево до последнего коммита `main` и делает `uv sync`.
 

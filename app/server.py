@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import shutil
 import threading
 from contextlib import contextmanager
@@ -539,6 +540,34 @@ def update_check():
 def update_apply():
     from . import updater
     return updater.apply()
+
+
+@app.get("/api/update/apply/stream")
+async def update_apply_stream():
+    """SSE-стрим прогресса обновления: каждое событие — JSON
+    {type: step|line|step_done|done, ...}.
+    """
+    from . import updater
+
+    async def gen():
+        loop = asyncio.get_running_loop()
+        it = updater.apply_stream()
+        while True:
+            try:
+                evt = await loop.run_in_executor(None, next, it, _STOP)
+            except Exception as e:  # noqa: BLE001
+                yield {"data": json.dumps({"type": "done", "ok": False, "message": str(e)})}
+                return
+            if evt is _STOP:
+                return
+            yield {"data": json.dumps(evt)}
+            if evt.get("type") == "done":
+                return
+
+    return EventSourceResponse(gen())
+
+
+_STOP = object()
 
 
 @app.get("/api/health")
