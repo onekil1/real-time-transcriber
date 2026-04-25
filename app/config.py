@@ -47,7 +47,7 @@ ASR_COMPUTE_TYPE = os.environ.get(
 
 # HF-repo по умолчанию — разный для бэкендов.
 _DEFAULT_WHISPER_HF = (
-    "mlx-community/whisper-large-v3-turbo"
+    "mlx-community/whisper-large-v3-mlx"
     if ASR_BACKEND == "mlx"
     else "Systran/faster-whisper-large-v3"
 )

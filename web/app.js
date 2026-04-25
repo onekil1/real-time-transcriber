@@ -116,7 +116,7 @@ async function openSession(id) {
   const started = s.started_at ? new Date(s.started_at * 1000).toLocaleString("ru-RU") : "";
   const dur = s.duration_sec ? fmtDur(s.duration_sec) : "—";
   $("#meta").textContent = `${started} · ${dur} · ${s.source} · ${s.status}`;
-  $("#progress").textContent = "";
+  resetProgress();
 
   // шаблон
   setChip($("#tmpl-current"), s.template);
@@ -152,7 +152,7 @@ function attachSSE(id) {
   state.sse = es;
   es.onmessage = (e) => {
     const p = JSON.parse(e.data);
-    $("#progress").textContent = formatProgress(p);
+    setProgress(p);
 
     if (p.event === "asr:partial" && p.text) {
       appendPartial(p.start ?? 0, p.text);
@@ -184,25 +184,65 @@ async function refreshReport(id) {
   } catch {}
 }
 
-function formatProgress(p) {
+const PROGRESS_STAGES = ["record", "asr", "llm"];
+
+function resetProgress() {
+  document.querySelectorAll("#progress .p-row").forEach((r) => {
+    r.classList.remove("active", "done", "error");
+    const t = r.querySelector(".p-text");
+    if (t) t.textContent = "";
+  });
+}
+
+function setProgressRow(stage, text, status) {
+  const row = document.querySelector(`#progress .p-row[data-stage="${stage}"]`);
+  if (!row) return;
+  // предыдущие фазы помечаем как done, если они были active
+  const idx = PROGRESS_STAGES.indexOf(stage);
+  PROGRESS_STAGES.forEach((s, i) => {
+    if (i >= idx) return;
+    const r = document.querySelector(`#progress .p-row[data-stage="${s}"]`);
+    if (r && r.classList.contains("active")) {
+      r.classList.remove("active");
+      r.classList.add("done");
+    }
+  });
+  row.classList.remove("active", "done", "error");
+  row.classList.add(status);
+  const t = row.querySelector(".p-text");
+  if (t) t.textContent = text;
+}
+
+function setProgress(p) {
   const pct = p.progress != null ? ` ${Math.round(p.progress * 100)}%` : "";
   switch (p.event) {
-    case "recording":         return "Запись...";
-    case "recording:stopped": return "Остановлено, обрабатываем...";
-    case "asr:chunk_start":   return `Транскрибация чанка ${p.chunk}...`;
-    case "asr:chunk_done":    return `Чанк ${p.chunk} готов (всего: ${p.processed})`;
-    case "asr:partial":       return `Чанк ${p.chunk} готов`;
-    case "asr:model_load":    return "Загрузка модели ASR...";
-    case "asr:done":          return "Транскрибация завершена";
-    case "transcribing":      return `Транскрибация${pct}`;
-    case "summarizing":       return "Генерация отчёта...";
-    case "llm:start":         return "Отправка в LLM...";
-    case "llm:chunk":         return `LLM обрабатывает часть${pct}`;
-    case "llm:done":          return "Отчёт готов";
-    case "done":              return "Готово";
-    case "error":             return `Ошибка: ${p.message || ""}`;
-    case "uploaded":          return "Загружено";
-    default:                  return `${p.event}${pct}`;
+    case "recording":         return setProgressRow("record", "Идёт запись...", "active");
+    case "recording:stopped": return setProgressRow("record", "Запись остановлена", "done");
+    case "uploaded":          return setProgressRow("record", "Файл загружен", "done");
+    case "asr:model_load":    return setProgressRow("asr", "Подготовка модели / препроцессинг...", "active");
+    case "asr:chunk_start":   return setProgressRow("asr", `Чанк ${p.chunk}...`, "active");
+    case "asr:chunk_done":    return setProgressRow("asr", `Чанк ${p.chunk} готов (всего: ${p.processed})`, "active");
+    case "asr:partial":       return setProgressRow("asr", `Чанк ${p.chunk} готов`, "active");
+    case "transcribing":      return setProgressRow("asr", `Транскрибация${pct}`, "active");
+    case "asr:done":          return setProgressRow("asr", "Транскрибация завершена", "done");
+    case "summarizing":       return setProgressRow("llm", "Генерация отчёта...", "active");
+    case "llm:start":         return setProgressRow("llm", "Отправка в LLM...", "active");
+    case "llm:chunk":         return setProgressRow("llm", `LLM обрабатывает часть${pct}`, "active");
+    case "llm:done":          return setProgressRow("llm", "Отчёт готов", "done");
+    case "done":              return setProgressRow("llm", "Готово", "done");
+    case "error": {
+      const msg = `Ошибка: ${p.message || ""}`;
+      const active = document.querySelector("#progress .p-row.active");
+      if (active) {
+        active.classList.remove("active");
+        active.classList.add("error");
+        const t = active.querySelector(".p-text");
+        if (t) t.textContent = msg;
+      } else {
+        setProgressRow("llm", msg, "error");
+      }
+      return;
+    }
   }
 }
 

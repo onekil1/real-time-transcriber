@@ -125,7 +125,14 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .detail-head { padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .detail-head h2 { margin: 0 0 2px; font-size: 18px; }
 .meta { color: var(--muted); font-size: 12px; }
-.progress { font-size: 11px; color: var(--accent); min-height: 14px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress { font-size: 11px; margin-bottom: 4px; display: flex; flex-direction: column; gap: 2px; }
+.progress .p-row { display: flex; gap: 8px; align-items: baseline; color: var(--muted); opacity: 0.55; }
+.progress .p-row.active { color: var(--accent); opacity: 1; }
+.progress .p-row.done   { color: #4caf50; opacity: 0.9; }
+.progress .p-row.error  { color: #e55; opacity: 1; }
+.progress .p-label { min-width: 96px; flex-shrink: 0; font-weight: 500; }
+.progress .p-text  { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.progress .p-text:empty::before { content: "—"; opacity: 0.4; }
 
 .tabs { display: flex; gap: 2px; padding: 0 20px; border-bottom: 1px solid var(--border); background: var(--panel); }
 .tabs button { background: transparent; color: var(--muted); border: none; padding: 10px 16px; cursor: pointer; font-size: 13px; border-bottom: 2px solid transparent; }

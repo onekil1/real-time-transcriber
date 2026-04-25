@@ -63,7 +63,7 @@ elif ls models/whisper/*.safetensors >/dev/null 2>&1 || ls models/whisper/*.npz 
 else
   echo "[WARN] Модель Whisper (MLX) не найдена в models/whisper/mac/."
   echo "       Положите .safetensors/.npz файлы туда."
-  echo "       Пример: https://huggingface.co/mlx-community/whisper-large-v3-turbo"
+  echo "       Пример: https://huggingface.co/mlx-community/whisper-large-v3-mlx"
 fi
 
 # --- 6. LM Studio --------------------------------------------------

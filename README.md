@@ -25,7 +25,7 @@
 1. **LM Studio** — это движок, который пишет отчёт. Скачайте с [lmstudio.ai](https://lmstudio.ai), установите, внутри LM Studio загрузите модель (рекомендуем `Qwen2.5-7B-Instruct`) и нажмите `Developer → Start Server`. Дальше трогать её не надо — просто пусть работает в фоне.
 
 2. **Модель распознавания речи (Whisper)** — большой файл ~1.5 GB. Скачайте с HuggingFace:
-   - **macOS**: [`mlx-community/whisper-large-v3-turbo`](https://huggingface.co/mlx-community/whisper-large-v3-turbo) → положите файлы в папку `models/whisper/mac/`
+   - **macOS**: [`mlx-community/whisper-large-v3-mlx`](https://huggingface.co/mlx-community/whisper-large-v3-mlx) → положите файлы в папку `models/whisper/mac/`
    - **Windows**: [`Systran/faster-whisper-large-v3`](https://huggingface.co/Systran/faster-whisper-large-v3) → положите файлы в `models/whisper/win/`
 
 3. **Само приложение** — установщик сделает всё остальное (ниже).
