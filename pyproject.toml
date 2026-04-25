@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.1.10"
+version = "0.1.11"
 description = "Локальная транскрибация совещаний + автогенерация отчётов (macOS Apple Silicon / Windows + NVIDIA)"
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -14,6 +14,7 @@ dependencies = [
     "sse-starlette>=2.1",
     "requests>=2.32",
     "python-docx>=1.1",
+    "huggingface-hub>=0.24",
     # macOS (Apple Silicon) — ASR через MLX + menubar через rumps/AppKit
     "mlx-whisper>=0.4.2; sys_platform == 'darwin'",
     "silero-vad>=5.0; sys_platform == 'darwin'",

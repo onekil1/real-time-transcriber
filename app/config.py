@@ -109,6 +109,31 @@ def whisper_model_ref() -> str:
     return WHISPER_MODEL
 
 
+def ensure_local_whisper(progress_cb=None) -> Path:
+    """Гарантирует, что модель Whisper лежит в models/whisper/<platform>/.
+
+    Если её там нет — скачивает с HuggingFace через snapshot_download прямо в
+    LOCAL_WHISPER_DIR (не в общий ~/.cache/huggingface). Возвращает путь до
+    папки с моделью. Если модель уже на месте — ничего не делает.
+    """
+    if _local_whisper_ready(LOCAL_WHISPER_DIR):
+        return LOCAL_WHISPER_DIR
+    if _local_whisper_ready(_LEGACY_WHISPER_DIR):
+        return _LEGACY_WHISPER_DIR
+
+    LOCAL_WHISPER_DIR.mkdir(parents=True, exist_ok=True)
+    from huggingface_hub import snapshot_download
+
+    if progress_cb:
+        progress_cb(f"Скачиваю модель {WHISPER_MODEL} → {LOCAL_WHISPER_DIR} ...")
+    snapshot_download(
+        repo_id=WHISPER_MODEL,
+        local_dir=str(LOCAL_WHISPER_DIR),
+        local_dir_use_symlinks=False,
+    )
+    return LOCAL_WHISPER_DIR
+
+
 def whisper_is_local() -> bool:
     return _local_whisper_ready(LOCAL_WHISPER_DIR) or _local_whisper_ready(_LEGACY_WHISPER_DIR)
 

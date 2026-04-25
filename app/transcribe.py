@@ -41,6 +41,7 @@ from .config import (
     LOCAL_WHISPER_DIR,
     SAMPLE_RATE,
     WHISPER_MODEL,
+    ensure_local_whisper,
     whisper_is_local,
     whisper_model_ref,
 )
@@ -295,6 +296,9 @@ def _mlx_transcribe(
 ) -> dict[str, Any]:
     import mlx_whisper
 
+    ensure_local_whisper(
+        lambda msg: print(f"[ASR] {msg}", file=sys.stderr, flush=True)
+    )
     status, speech_wav, offsets = _silero_extract_speech(wav_path)
     if status == "empty":
         return {"text": "", "segments": [], "language": language}
@@ -375,6 +379,9 @@ def _faster_get_model():
     with _faster_lock:
         if _faster_model is not None:
             return _faster_model
+        ensure_local_whisper(
+            lambda msg: print(f"[ASR] {msg}", file=sys.stderr, flush=True)
+        )
         try:
             _faster_model = _faster_load(ASR_DEVICE, ASR_COMPUTE_TYPE)
             _faster_device = ASR_DEVICE
