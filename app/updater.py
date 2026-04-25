@@ -90,10 +90,16 @@ def apply() -> dict[str, Any]:
     git_dir = PROJECT_ROOT / ".git"
 
     if git_dir.exists():
-        step = _run(["git", "pull", "--ff-only"])
-        log.append(step)
-        if step["code"] != 0:
-            return {"ok": False, "step": "git pull", "log": log}
+        # Используем fetch+merge вместо `git pull --ff-only`, чтобы не зависеть
+        # от настроенного upstream-трекинга (после ручного `git init` его нет).
+        fetch = _run(["git", "fetch", "origin", _DEFAULT_BRANCH])
+        log.append(fetch)
+        if fetch["code"] != 0:
+            return {"ok": False, "step": "git fetch", "log": log}
+        merge = _run(["git", "merge", "--ff-only", f"origin/{_DEFAULT_BRANCH}"])
+        log.append(merge)
+        if merge["code"] != 0:
+            return {"ok": False, "step": "git merge", "log": log}
     else:
         # Установка из ZIP — поднимаем git-репозиторий поверх существующих файлов.
         for cmd, label in [
