@@ -551,12 +551,6 @@ function setHealthDot(k, cls, note) {
   });
 }
 
-function shortRef(ref) {
-  if (!ref) return "";
-  const parts = ref.split("/");
-  return parts[parts.length - 1] || ref;
-}
-
 function shortErr(e) {
   return (e || "").split(":").slice(-1)[0].trim().slice(0, 40) || "ошибка";
 }
@@ -595,10 +589,38 @@ async function checkForUpdate() {
   };
 
   $("#btn-update-apply").onclick = async () => {
+    const btnEl = $("#btn-update-apply");
+
+    // Режим «Перезагрузить» — кнопка превратилась в перезапуск после успешного
+    // обновления. Дёргаем /api/restart и ждём, пока новый процесс поднимется.
+    if (btnEl.dataset.action === "restart") {
+      btnEl.disabled = true;
+      btnEl.textContent = "Перезагружаю…";
+      try { await api("/api/restart", { method: "POST" }); } catch {}
+      // Сервер сейчас умрёт. Поллим /api/version, пока не оживёт.
+      const started = Date.now();
+      const tick = async () => {
+        try {
+          await api("/api/version");
+          location.reload();
+        } catch {
+          if (Date.now() - started > 60000) {
+            btnEl.disabled = false;
+            btnEl.textContent = "Перезагрузить";
+            alert("Не дождались перезапуска за 60с. Запустите программу вручную.");
+            return;
+          }
+          setTimeout(tick, 700);
+        }
+      };
+      setTimeout(tick, 1500);
+      return;
+    }
+
     const notes = info.body ? `\n\nПримечания к релизу:\n${info.body.slice(0, 400)}` : "";
     if (!confirm(
       `Установить версию ${info.latest}?\n\nБудет выполнено git fetch + merge + uv sync. ` +
-      `После установки нужно перезапустить приложение вручную.${notes}`
+      `После установки появится кнопка «Перезагрузить».${notes}`
     )) return;
 
     const btn = $("#btn-update-apply");
@@ -638,9 +660,11 @@ async function checkForUpdate() {
         es.close();
         if (evt.ok) {
           $("#update-banner .upd-text").textContent =
-            `Версия ${info.latest} установлена. Перезапустите приложение.`;
+            `Версия ${info.latest} установлена.`;
           stepEl.textContent = "✓ Готово";
-          btn.classList.add("hidden");
+          btn.disabled = false;
+          btn.textContent = "Перезагрузить";
+          btn.dataset.action = "restart";
           $("#btn-update-later").textContent = "Закрыть";
         } else {
           stepEl.textContent = `✗ Ошибка на этапе «${evt.step || "?"}»`;

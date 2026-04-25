@@ -43,6 +43,19 @@ def _wait_until_up(timeout: float = 10.0) -> bool:
     return False
 
 
+def _open_browser_when_ready() -> None:
+    if not _wait_until_up():
+        print("Сервер не поднялся за 10 секунд — браузер не открываю.", file=sys.stderr)
+        return
+    print(f"✅ Meeting Scribe запущен на http://{HOST}:{PORT}", flush=True)
+    try:
+        import webbrowser
+        host = "127.0.0.1" if HOST in ("0.0.0.0", "::", "") else HOST
+        webbrowser.open(f"http://{host}:{PORT}")
+    except Exception as e:  # noqa: BLE001
+        print(f"Не удалось открыть браузер автоматически: {e}", file=sys.stderr)
+
+
 def main() -> None:
     ensure_dirs()
     storage.init_db()
@@ -53,32 +66,25 @@ def main() -> None:
     except Exception:
         pass
 
-    server_thread = threading.Thread(target=_serve, daemon=True)
-    server_thread.start()
-
-    if not _wait_until_up():
-        print("Сервер не поднялся за 10 секунд", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"✅ Meeting Scribe запущен на http://{HOST}:{PORT}", flush=True)
-
-    # На Windows/Linux menubar (rumps/AppKit) недоступен — стартуем только сервер.
     no_menubar = os.environ.get("MEETING_SCRIBE_NO_MENUBAR") == "1" or sys.platform != "darwin"
 
     if no_menubar:
-        try:
-            import webbrowser
-            host = "127.0.0.1" if HOST in ("0.0.0.0", "::", "") else HOST
-            webbrowser.open(f"http://{host}:{PORT}")
-        except Exception as e:  # noqa: BLE001
-            print(f"Не удалось открыть браузер автоматически: {e}", file=sys.stderr)
-        try:
-            while True:
-                time.sleep(3600)
-        except KeyboardInterrupt:
-            return
+        # Без menubar (Windows / Linux): uvicorn в главном потоке — корректный
+        # graceful shutdown по Ctrl+C, без daemon-tread с обрывом SSE.
+        # Браузер открываем из watcher-треда, как только сервер ответит.
+        threading.Thread(target=_open_browser_when_ready, daemon=True).start()
+        _serve()
+        return
 
-    # запускаем menu bar в главном потоке (обязательно для AppKit)
+    # macOS: rumps/AppKit обязан жить в главном потоке, поэтому uvicorn —
+    # в фоновом треде. Здесь это допустимо: menubar.run() и так блокирует
+    # main thread до закрытия приложения.
+    server_thread = threading.Thread(target=_serve, daemon=True)
+    server_thread.start()
+    if not _wait_until_up():
+        print("Сервер не поднялся за 10 секунд", file=sys.stderr)
+        sys.exit(1)
+    print(f"✅ Meeting Scribe запущен на http://{HOST}:{PORT}", flush=True)
     from app.menubar import run as run_menubar
     run_menubar()
 

@@ -8,11 +8,19 @@ from __future__ import annotations
 
 import re
 import subprocess
+import threading
+import time
 from typing import Any
 
 import requests
 
 from .config import PROJECT_ROOT
+
+# Таймауты для шагов обновления.
+#   TOTAL — общий лимит на одну команду (для uv sync с большими DLL — щедро).
+#   IDLE  — без вывода в stdout/stderr дольше этого = считаем зависшим.
+_STEP_TOTAL_TIMEOUT_S = 900   # 15 минут
+_STEP_IDLE_TIMEOUT_S = 180    # 3 минуты тишины
 
 GITHUB_REPO = "onekil1/real-time-transcriber"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
@@ -76,6 +84,10 @@ def _stream_command(cmd: list[str]):
     """Запускает команду и стримит её stdout/stderr построчно. Yield-ит:
       ("line", text) — строка вывода
       ("done", returncode) — выход
+
+    Watchdog-тред убивает процесс, если: общее время > _STEP_TOTAL_TIMEOUT_S
+    или нет вывода дольше _STEP_IDLE_TIMEOUT_S. На убитый процесс yield-им
+    финальную строку с причиной — она увидится в логе UI.
     """
     p = subprocess.Popen(
         cmd,
@@ -88,10 +100,40 @@ def _stream_command(cmd: list[str]):
         errors="replace",
     )
     assert p.stdout is not None
-    for line in p.stdout:
-        yield ("line", line.rstrip("\r\n"))
-    p.stdout.close()
+
+    started = time.monotonic()
+    state = {"last": started, "killed_by": None}
+    stop_evt = threading.Event()
+
+    def _watchdog():
+        while not stop_evt.wait(2.0):
+            now = time.monotonic()
+            if now - started > _STEP_TOTAL_TIMEOUT_S:
+                state["killed_by"] = f"общий таймаут {_STEP_TOTAL_TIMEOUT_S}s"
+                p.kill()
+                return
+            if now - state["last"] > _STEP_IDLE_TIMEOUT_S:
+                state["killed_by"] = f"нет вывода {_STEP_IDLE_TIMEOUT_S}s"
+                p.kill()
+                return
+
+    wd = threading.Thread(target=_watchdog, daemon=True)
+    wd.start()
+
+    try:
+        for line in p.stdout:
+            state["last"] = time.monotonic()
+            yield ("line", line.rstrip("\r\n"))
+    finally:
+        stop_evt.set()
+        try:
+            p.stdout.close()
+        except Exception:
+            pass
+
     code = p.wait()
+    if state["killed_by"]:
+        yield ("line", f"[updater] процесс убит по таймауту: {state['killed_by']}")
     yield ("done", code)
 
 
@@ -111,7 +153,7 @@ def apply_stream():
         ]
     else:
         steps = [
-            (["git", "init"], "git init"),
+            (["git", "init", "-b", _DEFAULT_BRANCH], "git init"),
             (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
             (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
             (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),
@@ -155,9 +197,21 @@ def apply() -> dict[str, Any]:
     """
 
     def _run(cmd: list[str]) -> dict[str, Any]:
-        p = subprocess.run(
-            cmd, cwd=str(PROJECT_ROOT), capture_output=True, text=True, timeout=300
-        )
+        try:
+            p = subprocess.run(
+                cmd,
+                cwd=str(PROJECT_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=_STEP_TOTAL_TIMEOUT_S,
+            )
+        except subprocess.TimeoutExpired as e:
+            return {
+                "cmd": " ".join(cmd),
+                "code": -1,
+                "stdout": e.stdout or "",
+                "stderr": (e.stderr or "") + f"\n[updater] таймаут {_STEP_TOTAL_TIMEOUT_S}s",
+            }
         return {"cmd": " ".join(cmd), "code": p.returncode, "stdout": p.stdout, "stderr": p.stderr}
 
     log: list[dict[str, Any]] = []
@@ -177,7 +231,7 @@ def apply() -> dict[str, Any]:
     else:
         # Установка из ZIP — поднимаем git-репозиторий поверх существующих файлов.
         for cmd, label in [
-            (["git", "init"], "git init"),
+            (["git", "init", "-b", _DEFAULT_BRANCH], "git init"),
             (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
             (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
             (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),

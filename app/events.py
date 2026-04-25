@@ -40,7 +40,13 @@ class EventBus:
             "ts": time.time(),
             **extra,
         }
-        self._last[session_id] = payload
+        # Терминальные события — финал сессии. Не храним их вечно: после
+        # них никто уже не подпишется на ретроспективное последнее событие.
+        if event in ("done", "error"):
+            self._last.pop(session_id, None)
+            self._queues.pop(session_id, None)
+        else:
+            self._last[session_id] = payload
         subs = list(self._queues.get(session_id, []))
         if not subs:
             return

@@ -169,13 +169,22 @@ def save_segments(session_id: str, segments: Iterable[dict[str, Any]]) -> None:
                 s.get("speaker"),
             )
         )
+    # Соединение в autocommit (isolation_level=None), поэтому DELETE+INSERT
+    # без явной транзакции — два независимых коммита: при сбое insert-а
+    # старые сегменты уже удалены и не вернутся. Заворачиваем в BEGIN/COMMIT.
     with _conn() as cx:
-        cx.execute("DELETE FROM segments WHERE session_id=?", (session_id,))
-        cx.executemany(
-            "INSERT INTO segments(session_id, idx, start_sec, end_sec, text, speaker) "
-            "VALUES (?,?,?,?,?,?)",
-            rows,
-        )
+        cx.execute("BEGIN")
+        try:
+            cx.execute("DELETE FROM segments WHERE session_id=?", (session_id,))
+            cx.executemany(
+                "INSERT INTO segments(session_id, idx, start_sec, end_sec, text, speaker) "
+                "VALUES (?,?,?,?,?,?)",
+                rows,
+            )
+            cx.execute("COMMIT")
+        except Exception:
+            cx.execute("ROLLBACK")
+            raise
 
 
 def save_report(session_id: str, md: str, data: dict[str, Any]) -> None:

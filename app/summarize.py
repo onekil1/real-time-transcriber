@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any
 
 import requests
@@ -148,21 +149,31 @@ def _chat(prompt: str, max_tokens: int = LLM_MAX_TOKENS) -> str:
         "max_tokens": max_tokens,
         "stream": False,
     }
-    try:
-        r = requests.post(
-            f"{LM_STUDIO_BASE_URL}/chat/completions",
-            headers={
-                "Authorization": f"Bearer {LM_STUDIO_API_KEY}",
-                "Content-Type": "application/json",
-            },
-            json=body,
-            timeout=600,
-        )
-        r.raise_for_status()
-    except requests.RequestException as e:
-        raise LLMUnavailable(f"LM Studio HTTP error: {e}") from e
-    msg = r.json()["choices"][0]["message"]
-    return (msg.get("content") or "").strip()
+    headers = {
+        "Authorization": f"Bearer {LM_STUDIO_API_KEY}",
+        "Content-Type": "application/json",
+    }
+    url = f"{LM_STUDIO_BASE_URL}/chat/completions"
+
+    # 1 ретрай на сетевые сбои / залипания при первом промпте после загрузки
+    # модели в LM Studio. На HTTP-ошибки (4xx/5xx) не ретраим — обычно это
+    # некорректный запрос или OOM, повтор не поможет.
+    last_err: Exception | None = None
+    for attempt in (0, 1):
+        try:
+            r = requests.post(url, headers=headers, json=body, timeout=600)
+            r.raise_for_status()
+            msg = r.json()["choices"][0]["message"]
+            return (msg.get("content") or "").strip()
+        except (requests.ConnectionError, requests.Timeout) as e:
+            last_err = e
+            if attempt == 0:
+                time.sleep(2.0)
+                continue
+            raise LLMUnavailable(f"LM Studio недоступна: {e}") from e
+        except requests.RequestException as e:
+            raise LLMUnavailable(f"LM Studio HTTP error: {e}") from e
+    raise LLMUnavailable(f"LM Studio недоступна: {last_err}")
 
 
 # ---------- JSON-парсер -------------------------------------------------------

@@ -159,6 +159,8 @@ async def _live_mic_pipeline(session_id: str) -> None:
         storage.set_status(session_id, "done")
         bus.publish(session_id, "done", 1.0)
     except Exception as e:  # noqa: BLE001
+        import traceback
+        traceback.print_exc()
         storage.set_status(session_id, "error", error=str(e))
         bus.publish(session_id, "error", 1.0, message=str(e))
 
@@ -534,6 +536,43 @@ def session_docx(session_id: str):
 def app_version():
     from . import updater
     return {"version": updater.current_version()}
+
+
+@app.post("/api/restart")
+def app_restart():
+    """Спавнит новый процесс программы и убивает текущий.
+
+    На Windows запускаем через `start ""` — отдельное окно cmd, которое
+    переживёт завершение текущего. На *nix — обычный detached subprocess.
+    """
+    import os
+    import subprocess
+    import sys
+    import threading
+
+    from .config import PROJECT_ROOT
+
+    run_py = PROJECT_ROOT / "run.py"
+
+    if sys.platform == "win32":
+        DETACHED = 0x00000008  # DETACHED_PROCESS
+        NEW_GROUP = 0x00000200  # CREATE_NEW_PROCESS_GROUP
+        subprocess.Popen(
+            ["cmd", "/c", "start", "", sys.executable, str(run_py)],
+            cwd=str(PROJECT_ROOT),
+            creationflags=DETACHED | NEW_GROUP,
+            close_fds=True,
+        )
+    else:
+        subprocess.Popen(
+            [sys.executable, str(run_py)],
+            cwd=str(PROJECT_ROOT),
+            start_new_session=True,
+        )
+
+    # Даём ответу долететь до браузера, потом убиваем процесс целиком.
+    threading.Timer(0.5, lambda: os._exit(0)).start()
+    return {"ok": True}
 
 
 @app.get("/api/update/check")

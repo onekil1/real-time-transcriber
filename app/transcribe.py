@@ -145,19 +145,21 @@ def _preprocess_audio(src: Path) -> Path:
     """
     if not DENOISE or not _have_ffmpeg():
         return src
+    tmp_dir = Path(tempfile.mkdtemp(prefix="dn_"))
+    out = tmp_dir / (src.stem + "_dn.wav")
+    cmd = [
+        "ffmpeg", "-y", "-i", str(src),
+        "-af", "highpass=f=80,afftdn=nr=12,dynaudnorm=f=200:g=15",
+        "-ac", "1", "-ar", "16000",
+        "-loglevel", "error",
+        str(out),
+    ]
     try:
-        tmp_dir = Path(tempfile.mkdtemp(prefix="dn_"))
-        out = tmp_dir / (src.stem + "_dn.wav")
-        cmd = [
-            "ffmpeg", "-y", "-i", str(src),
-            "-af", "highpass=f=80,afftdn=nr=12,dynaudnorm=f=200:g=15",
-            "-ac", "1", "-ar", "16000",
-            "-loglevel", "error",
-            str(out),
-        ]
         subprocess.run(cmd, check=True, capture_output=True, timeout=120)
         return out
     except Exception:
+        # ffmpeg не отработал — снос tmp_dir, чтобы не копился мусор в %TEMP%.
+        shutil.rmtree(tmp_dir, ignore_errors=True)
         return src
 
 
