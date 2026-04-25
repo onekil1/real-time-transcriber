@@ -192,6 +192,41 @@ function resetProgress() {
     const t = r.querySelector(".p-text");
     if (t) t.textContent = "";
   });
+  resetChunkCounter();
+}
+
+// Точный счётчик чанков ASR в строке «Транскрибация». Считаем независимо
+// от p.chunk (тот — индекс файла-чанка на бекенде, может «сбиваться» при
+// паузах). Здесь — просто счётчик событий: started vs done.
+const chunkCounter = { started: 0, done: 0 };
+
+function renderChunkCounter() {
+  const el = document.getElementById("chunk-counter");
+  if (!el) return;
+  if (chunkCounter.started === 0) {
+    el.textContent = "";
+    return;
+  }
+  const pending = chunkCounter.started - chunkCounter.done;
+  const tail = pending > 0 ? `<span class="cc-sep">·</span>в работе: ${pending}` : "";
+  el.innerHTML = `<span class="cc-done">${chunkCounter.done}</span> готово${tail}`;
+}
+
+function resetChunkCounter() {
+  chunkCounter.started = 0;
+  chunkCounter.done = 0;
+  renderChunkCounter();
+}
+
+function bumpChunkCounter(kind) {
+  if (kind === "started") chunkCounter.started++;
+  if (kind === "done") chunkCounter.done++;
+  renderChunkCounter();
+}
+
+function hideChunkCounterSoon() {
+  // Счётчик остаётся видим до начала следующей сессии (resetChunkCounter
+  // вызывается в resetProgress) — пусть пользователь успеет увидеть итог.
 }
 
 function setProgressRow(stage, text, status) {
@@ -215,22 +250,32 @@ function setProgressRow(stage, text, status) {
 
 function setProgress(p) {
   const pct = p.progress != null ? ` ${Math.round(p.progress * 100)}%` : "";
+  // Пользователю показываем 1-based нумерацию (chunk на бекенде 0-based,
+  // и это внутренний индекс файла-чанка, а не «номер по порядку»).
+  const chunkN = (p.chunk != null) ? (p.chunk + 1) : null;
   switch (p.event) {
     case "recording":         return setProgressRow("record", "Идёт запись...", "active");
     case "recording:stopped": return setProgressRow("record", "Запись остановлена", "done");
     case "uploaded":          return setProgressRow("record", "Файл загружен", "done");
     case "asr:model_load":    return setProgressRow("asr", "Подготовка модели / препроцессинг...", "active");
-    case "asr:chunk_start":   return setProgressRow("asr", `Чанк ${p.chunk}...`, "active");
-    case "asr:chunk_done":    return setProgressRow("asr", `Чанк ${p.chunk} готов (всего: ${p.processed})`, "active");
-    case "asr:partial":       return setProgressRow("asr", `Чанк ${p.chunk} готов`, "active");
+    case "asr:chunk_start":
+      bumpChunkCounter("started");
+      return setProgressRow("asr", `Чанк ${chunkN}…`, "active");
+    case "asr:chunk_done":
+      bumpChunkCounter("done");
+      return setProgressRow("asr", `Чанк ${chunkN} готов`, "active");
+    case "asr:partial":       return setProgressRow("asr", `Чанк ${chunkN} готов`, "active");
     case "transcribing":      return setProgressRow("asr", `Транскрибация${pct}`, "active");
     case "asr:done":          return setProgressRow("asr", "Транскрибация завершена", "done");
     case "summarizing":       return setProgressRow("llm", "Генерация отчёта...", "active");
     case "llm:start":         return setProgressRow("llm", "Отправка в LLM...", "active");
     case "llm:chunk":         return setProgressRow("llm", `LLM обрабатывает часть${pct}`, "active");
     case "llm:done":          return setProgressRow("llm", "Отчёт готов", "done");
-    case "done":              return setProgressRow("llm", "Готово", "done");
+    case "done":
+      hideChunkCounterSoon();
+      return setProgressRow("llm", "Готово", "done");
     case "error": {
+      hideChunkCounterSoon();
       const msg = `Ошибка: ${p.message || ""}`;
       const active = document.querySelector("#progress .p-row.active");
       if (active) {

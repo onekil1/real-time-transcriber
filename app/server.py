@@ -172,9 +172,6 @@ def _consume_chunks(session_id: str) -> None:
 
     glossary = settings.get_glossary()
     processed = 0
-    # Хвост текста с прошлого чанка — подмешивается в initial_prompt
-    # следующего, чтобы Whisper держал имена/термины на стыках.
-    prev_context: str = ""
     while True:
         item = recorder.chunk_queue.get()
         if item is None:
@@ -184,9 +181,7 @@ def _consume_chunks(session_id: str) -> None:
 
         bus.publish(session_id, "asr:chunk_start", None, chunk=item.idx)
         with _busy("whisper", session_id):
-            segs = transcribe.transcribe_chunk(
-                item.path, glossary=glossary, prev_context=prev_context or None
-            )
+            segs = transcribe.transcribe_chunk(item.path, glossary=glossary)
         abs_segs = [
             {
                 "start": item.start_sec + s["start"],
@@ -209,9 +204,6 @@ def _consume_chunks(session_id: str) -> None:
         if new_segs:
             storage.append_segments(session_id, new_segs)
             added_text = " ".join(s["text"] for s in new_segs)
-            # Хвост ~200 символов как контекст для следующего чанка.
-            # Берём из new_segs (после dedup), чтобы не тащить дубли.
-            prev_context = added_text[-200:].lstrip()
             bus.publish(
                 session_id,
                 "asr:partial",

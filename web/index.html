@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Транскрибатор (real-time)</title>
 
-<link rel="stylesheet" href="styles.css?v=39" />
+<link rel="stylesheet" href="styles.css?v=41" />
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
 </head>
 <body>
@@ -32,7 +32,7 @@
     <div id="health" class="health" title="Проверить состояние сервисов">
       <div id="progress" class="progress">
         <div class="p-row" data-stage="record"><span class="p-label">Запись</span><span class="p-text"></span></div>
-        <div class="p-row" data-stage="asr"><span class="p-label">Транскрибация</span><span class="p-text"></span></div>
+        <div class="p-row" data-stage="asr"><span class="p-label">Транскрибация</span><span class="p-text"></span><span class="p-counter" id="chunk-counter"></span></div>
         <div class="p-row" data-stage="llm"><span class="p-label">Отчёт</span><span class="p-text"></span></div>
       </div>
       <span class="h-row">
@@ -158,6 +158,6 @@
     </section>
   </main>
 </div>
-<script src="app.js?v=25" defer></script>
+<script src="app.js?v=27" defer></script>
 </body>
 </html>
