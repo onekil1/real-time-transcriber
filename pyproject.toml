@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.1.6"
+version = "0.1.7"
 description = "Локальная транскрибация совещаний + автогенерация отчётов (macOS Apple Silicon / Windows + NVIDIA)"
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -23,8 +23,11 @@ dependencies = [
     # Версии запинены: 1.2.x + 4.7.x на Windows ловят пустой генератор от
     # model.transcribe() при vad_filter=True + word_timestamps=True (баг
     # на стороне CT2/FW), поэтому держим стабильную пару 1.0.3 / 4.4.0.
+    # ctranslate2 4.4.0 импортирует pkg_resources → нужен setuptools, который
+    # в новых uv-venv не ставится автоматически.
     "faster-whisper==1.0.3; sys_platform == 'win32'",
     "ctranslate2==4.4.0; sys_platform == 'win32'",
+    "setuptools>=68; sys_platform == 'win32'",
 ]
 
 [project.optional-dependencies]
