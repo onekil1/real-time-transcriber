@@ -112,9 +112,10 @@ def whisper_model_ref() -> str:
 def ensure_local_whisper(progress_cb=None) -> Path:
     """Гарантирует, что модель Whisper лежит в models/whisper/<platform>/.
 
-    Если её там нет — скачивает с HuggingFace через snapshot_download прямо в
-    LOCAL_WHISPER_DIR (не в общий ~/.cache/huggingface). Возвращает путь до
-    папки с моделью. Если модель уже на месте — ничего не делает.
+    Если её там нет — материализует через snapshot_download прямо в
+    LOCAL_WHISPER_DIR. Если модель уже скачана в HF-кэш (~/.cache/huggingface),
+    snapshot_download просто скопирует файлы оттуда без сетевой нагрузки;
+    если её нет — скачает.
     """
     if _local_whisper_ready(LOCAL_WHISPER_DIR):
         return LOCAL_WHISPER_DIR
@@ -125,12 +126,17 @@ def ensure_local_whisper(progress_cb=None) -> Path:
     from huggingface_hub import snapshot_download
 
     if progress_cb:
-        progress_cb(f"Скачиваю модель {WHISPER_MODEL} → {LOCAL_WHISPER_DIR} ...")
+        progress_cb(f"Материализую модель {WHISPER_MODEL} → {LOCAL_WHISPER_DIR} ...")
+    # local_dir_use_symlinks выпилен в huggingface_hub 1.0+, поэтому не передаём его.
     snapshot_download(
         repo_id=WHISPER_MODEL,
         local_dir=str(LOCAL_WHISPER_DIR),
-        local_dir_use_symlinks=False,
     )
+    if not _local_whisper_ready(LOCAL_WHISPER_DIR):
+        raise RuntimeError(
+            f"snapshot_download отработал, но в {LOCAL_WHISPER_DIR} нет ожидаемых "
+            "файлов модели. Проверьте права и содержимое папки."
+        )
     return LOCAL_WHISPER_DIR
 
 

@@ -530,6 +530,12 @@ def session_docx(session_id: str):
     )
 
 
+@app.get("/api/version")
+def app_version():
+    from . import updater
+    return {"version": updater.current_version()}
+
+
 @app.get("/api/update/check")
 def update_check():
     from . import updater

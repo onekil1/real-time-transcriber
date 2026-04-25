@@ -658,10 +658,18 @@ async function checkForUpdate() {
   };
 }
 
+async function loadAppVersion() {
+  try {
+    const r = await api("/api/version");
+    if (r.version) $("#app-version").textContent = `v${r.version}`;
+  } catch {}
+}
+
 // ---------- init ----------
 
 loadTemplates().then(loadSessions);
 loadHealth();
+loadAppVersion();
 checkForUpdate();
 setInterval(loadSessions, 5000);
 setInterval(loadHealth, 15000);

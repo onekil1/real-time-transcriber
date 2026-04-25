@@ -47,6 +47,12 @@ def main() -> None:
     ensure_dirs()
     storage.init_db()
 
+    try:
+        from app.updater import current_version
+        print(f"Транскрибатор (real-time) v{current_version()}", flush=True)
+    except Exception:
+        pass
+
     server_thread = threading.Thread(target=_serve, daemon=True)
     server_thread.start()
 
