@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Транскрибатор (real-time)</title>
 
-<link rel="stylesheet" href="styles.css?v=34" />
+<link rel="stylesheet" href="styles.css?v=35" />
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js" defer></script>
 </head>
 <body>
@@ -50,14 +50,7 @@
   </aside>
 
   <main class="main">
-    <div id="empty" class="empty">
-      Выберите сессию или начните новую запись.
-      <div class="empty-actions">
-        <button id="btn-glossary-open-empty" title="Словарь имён и терминов для Whisper — применяется ко всем сессиям">
-          📖 Глоссарий
-        </button>
-      </div>
-    </div>
+    <div id="empty" class="empty">Выберите сессию или начните новую запись.</div>
 
     <section id="glossary-view" class="glossary-view hidden">
       <header class="detail-head">
@@ -119,8 +112,10 @@
             </div>
           </section>
 
-          <button id="btn-glossary-open" class="head-glossary-btn" title="Словарь имён и терминов для Whisper — применяется ко всем сессиям">
-            📖 Глоссарий<br><span class="btn-note">общий для всех сессий</span>
+          <button id="btn-glossary-open" class="head-glossary-btn"
+                  title="Промт-словарь для Whisper: подсказывает модели правильное написание имён и терминов; применяется ко всем сессиям">
+            <span class="hg-title">📖 Глоссарий</span>
+            <span class="hg-note">промт для Whisper — чтобы лучше узнавал имена и термины</span>
           </button>
 
         </div>
@@ -159,6 +154,6 @@
     </section>
   </main>
 </div>
-<script src="app.js?v=23" defer></script>
+<script src="app.js?v=24" defer></script>
 </body>
 </html>

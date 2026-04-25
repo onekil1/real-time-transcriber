@@ -120,15 +120,23 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .head-subgroup-body.vertical .tmpl-chips { width: 100%; }
 .head-subgroup-body.vertical button { align-self: stretch; }
 
-/* Кнопка «Глоссарий» рядом с группами в шапке: высота как у группы,
-   подпись под названием — компактно, в одну рамку. */
+/* Кнопка «Глоссарий» рядом с группами в шапке. Растягивается по высоте
+   как полноценный head-group (через align-self:stretch + display:flex). */
 .head-glossary-btn {
-  align-self: stretch; padding: 4px 12px; line-height: 1.2;
-  white-space: normal; flex-direction: column; gap: 2px;
+  align-self: stretch;
+  display: flex; flex-direction: column; justify-content: center;
+  gap: 4px; padding: 6px 14px; line-height: 1.25;
+  white-space: normal; text-align: center;
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--panel); color: var(--text); cursor: pointer;
+  font: inherit;
 }
 .head-glossary-btn:hover { background: var(--panel-2); }
+.head-glossary-btn .hg-title { font-size: 13px; font-weight: 500; }
+.head-glossary-btn .hg-note  {
+  font-size: 10px; color: var(--muted); font-weight: normal;
+  max-width: 220px;
+}
 
 
 .sessions { list-style: none; padding: 8px; margin: 0; overflow-y: auto; flex: 1; }
@@ -226,14 +234,6 @@ audio { width: 100%; }
   50%      { transform: scaleY(1); }
 }
 
-.empty { flex-direction: column; gap: 16px; }
-.empty-actions { display: flex; gap: 8px; }
-.empty-actions button {
-  background: var(--panel); color: var(--text);
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 8px 14px; cursor: pointer; font-size: 13px;
-}
-.empty-actions button:hover { background: var(--panel-2); }
 
 .glossary-view { display: flex; flex-direction: column; height: 100%; padding: 16px 20px; gap: 12px; }
 .glossary-view.hidden { display: none; }
