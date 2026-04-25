@@ -146,23 +146,10 @@ def apply_stream():
     """
     git_dir = PROJECT_ROOT / ".git"
 
-    if git_dir.exists():
-        steps: list[tuple[list[str], str]] = [
-            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
-            (["git", "merge", "--ff-only", f"origin/{_DEFAULT_BRANCH}"], "git merge"),
-        ]
-    else:
-        steps = [
-            (["git", "init", "-b", _DEFAULT_BRANCH], "git init"),
-            (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
-            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
-            (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),
-            (["git", "branch", "--set-upstream-to",
-              f"origin/{_DEFAULT_BRANCH}", _DEFAULT_BRANCH], "git branch upstream"),
-        ]
-    steps.append((["uv", "sync"], "uv sync"))
+    # Контейнер для returncode из _run_step (yield не возвращает значение).
+    rc_box = [0]
 
-    for cmd, label in steps:
+    def _run_step(cmd: list[str], label: str):
         yield {"type": "step", "label": label, "cmd": " ".join(cmd)}
         rc = 0
         for kind, payload in _stream_command(cmd):
@@ -171,14 +158,56 @@ def apply_stream():
             elif kind == "done":
                 rc = payload
         yield {"type": "step_done", "label": label, "code": rc}
-        if rc != 0 and label != "git branch upstream":
-            yield {
-                "type": "done",
-                "ok": False,
-                "step": label,
-                "message": f"Шаг '{label}' завершился с кодом {rc}",
-            }
+        rc_box[0] = rc
+
+    if git_dir.exists():
+        # 1) fetch
+        yield from _run_step(["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch")
+        if rc_box[0] != 0:
+            yield {"type": "done", "ok": False, "step": "git fetch",
+                   "message": f"git fetch завершился с кодом {rc_box[0]}"}
             return
+
+        # 2) merge --ff-only; на конфликте (локальные правки tracked-файлов
+        #    типа uv.lock) fallback на reset --hard. Untracked файлы
+        #    (data/, .venv/, models/) reset не трогает.
+        yield from _run_step(
+            ["git", "merge", "--ff-only", f"origin/{_DEFAULT_BRANCH}"], "git merge"
+        )
+        if rc_box[0] != 0:
+            yield {"type": "line",
+                   "text": "[updater] merge не прошёл — делаю reset --hard origin/main"}
+            yield from _run_step(
+                ["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"
+            )
+            if rc_box[0] != 0:
+                yield {"type": "done", "ok": False, "step": "git reset",
+                       "message": f"git reset завершился с кодом {rc_box[0]}"}
+                return
+    else:
+        bootstrap = [
+            (["git", "init", "-b", _DEFAULT_BRANCH], "git init"),
+            (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
+            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
+            (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),
+            (["git", "branch", "--set-upstream-to",
+              f"origin/{_DEFAULT_BRANCH}", _DEFAULT_BRANCH], "git branch upstream"),
+        ]
+        for cmd, label in bootstrap:
+            yield from _run_step(cmd, label)
+            # set-upstream-to может упасть, если ветка уже настроена —
+            # это не фатально для bootstrap-а.
+            if rc_box[0] != 0 and label != "git branch upstream":
+                yield {"type": "done", "ok": False, "step": label,
+                       "message": f"{label} завершился с кодом {rc_box[0]}"}
+                return
+
+    # uv sync — финальный шаг.
+    yield from _run_step(["uv", "sync"], "uv sync")
+    if rc_box[0] != 0:
+        yield {"type": "done", "ok": False, "step": "uv sync",
+               "message": f"uv sync завершился с кодом {rc_box[0]}"}
+        return
 
     yield {
         "type": "done",
@@ -227,7 +256,12 @@ def apply() -> dict[str, Any]:
         merge = _run(["git", "merge", "--ff-only", f"origin/{_DEFAULT_BRANCH}"])
         log.append(merge)
         if merge["code"] != 0:
-            return {"ok": False, "step": "git merge", "log": log}
+            # Конфликт с локальными правками tracked-файлов (uv.lock и т.п.) —
+            # fallback на reset --hard. Untracked-файлы reset не трогает.
+            reset = _run(["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"])
+            log.append(reset)
+            if reset["code"] != 0:
+                return {"ok": False, "step": "git reset", "log": log}
     else:
         # Установка из ZIP — поднимаем git-репозиторий поверх существующих файлов.
         for cmd, label in [

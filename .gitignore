@@ -20,3 +20,7 @@ models/whisper/**/model.bin
 start.bat
 *.log
 .claude/
+
+# uv lockfile — генерируется из pyproject.toml на каждой машине,
+# держать в репо нельзя (на разных платформах разные deps).
+uv.lock
