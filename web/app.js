@@ -385,6 +385,7 @@ async function saveGlossary() {
 }
 
 $("#btn-glossary-open")?.addEventListener("click", openGlossary);
+$("#btn-glossary-open-empty")?.addEventListener("click", openGlossary);
 $("#btn-glossary-close")?.addEventListener("click", closeGlossary);
 $("#btn-glossary-save")?.addEventListener("click", saveGlossary);
 

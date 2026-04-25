@@ -216,13 +216,14 @@ audio { width: 100%; }
   50%      { transform: scaleY(1); }
 }
 
-.glossary-open {
-  margin: 8px 12px; padding: 8px 10px; text-align: left;
-  background: transparent; color: var(--fg, #ddd);
-  border: 1px solid var(--border, #333); border-radius: 6px;
-  cursor: pointer; font-size: 13px;
+.empty { flex-direction: column; gap: 16px; }
+.empty-actions { display: flex; gap: 8px; }
+.empty-actions button {
+  background: var(--panel); color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 8px 14px; cursor: pointer; font-size: 13px;
 }
-.glossary-open:hover { background: var(--bg-hover, #222); }
+.empty-actions button:hover { background: var(--panel-2); }
 
 .glossary-view { display: flex; flex-direction: column; height: 100%; padding: 16px 20px; gap: 12px; }
 .glossary-view.hidden { display: none; }
