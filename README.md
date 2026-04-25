@@ -135,7 +135,8 @@ app/
 └── prompts/        # LLM-промпты по шаблонам
 models/whisper/{mac,win}/
 web/                # vanilla JS frontend
-scripts/            # install-{mac.sh,win.bat}, launch-*, run-mac.sh
+scripts/            # install-{mac.sh,win.bat}, launch-{mac.sh,win.bat}
+uninstall-{mac.command,win.bat}   # полное удаление установки
 ```
 
 ### Переменные окружения

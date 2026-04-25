@@ -70,20 +70,57 @@ def _is_hallucination(text: str) -> bool:
 
 _RU_ANCHOR_PROMPT = (
     "Стенограмма рабочего совещания на русском языке. "
-    "Обсуждаются задачи, сроки, решения и вопросы участников."
+    "Реплики коллег с естественными повторами, паузами и междометиями. "
+    "Числа писать цифрами. Английские термины и аббревиатуры оставлять латиницей "
+    "(API, SLA, Kubernetes). Имена собственные — с заглавной буквы."
 )
 
+# Жёсткий лимит initial_prompt у Whisper — 224 токена (~400-600 символов
+# для смешанного ru/en текста). Чтобы не схлопотать тихую обрезку, держим
+# суммарный prompt в этом коридоре с запасом.
+_PROMPT_BUDGET_CHARS = 500
 
-def _build_initial_prompt(glossary: str | None) -> str:
-    """Склеить якорь с пользовательским глоссарием (имена, термины, аббревиатуры).
 
-    Whisper использует initial_prompt как подсказку по написанию слов — перечисление
-    имён и специфичных терминов резко снижает ошибки на собственных именах и жаргоне.
+def _build_initial_prompt(
+    glossary: str | None,
+    prev_context: str | None = None,
+) -> str:
+    """Склеить якорь + глоссарий + контекст из предыдущего чанка.
+
+    Whisper использует initial_prompt как подсказку по написанию слов и стилю.
+    Глоссарий резко снижает ошибки на именах и жаргоне; контекст из прошлого
+    чанка помогает сохранить связность на стыках (имена, длинные термины,
+    обсуждаемая тема).
+
+    Бюджет суммарной длины ~500 символов — превышение Whisper тихо обрежет.
+    Если не влезает — сначала режем prev_context (он наименее ценный), потом
+    глоссарий с конца.
     """
+    parts = [_RU_ANCHOR_PROMPT]
     g = (glossary or "").strip()
-    if not g:
-        return _RU_ANCHOR_PROMPT
-    return f"{_RU_ANCHOR_PROMPT} Участники и термины: {g}"
+    if g:
+        parts.append(f"Участники и термины: {g}")
+    ctx = (prev_context or "").strip()
+    if ctx and not _is_hallucination(ctx):
+        parts.append(f"Контекст: …{ctx}")
+
+    prompt = " ".join(parts)
+    if len(prompt) <= _PROMPT_BUDGET_CHARS:
+        return prompt
+
+    # Урезаем сначала контекст, потом глоссарий — якорь не трогаем.
+    if ctx:
+        overflow = len(prompt) - _PROMPT_BUDGET_CHARS
+        ctx_trimmed = ctx[overflow + 3 :].lstrip(" ,.;")
+        parts[-1] = f"Контекст: …{ctx_trimmed}" if ctx_trimmed else ""
+        parts = [p for p in parts if p]
+        prompt = " ".join(parts)
+    if len(prompt) > _PROMPT_BUDGET_CHARS and g:
+        keep = _PROMPT_BUDGET_CHARS - len(_RU_ANCHOR_PROMPT) - len(" Участники и термины: ")
+        if keep > 0:
+            parts[1] = f"Участники и термины: {g[:keep].rstrip(', ')}"
+            prompt = " ".join(p for p in parts if p)
+    return prompt[:_PROMPT_BUDGET_CHARS]
 
 
 def _have_ffmpeg() -> bool:
@@ -147,9 +184,13 @@ def _preprocess_audio(src: Path) -> Path:
         return src
     tmp_dir = Path(tempfile.mkdtemp(prefix="dn_"))
     out = tmp_dir / (src.stem + "_dn.wav")
+    # highpass=80 — режем гул вентиляторов / 50 Гц.
+    # afftdn=nr=12 — спектральный денойз.
+    # loudnorm — EBU R128, спокойнее dynaudnorm: не пережимает паузы и не
+    #   вытягивает шум до уровня речи на тихих участках.
     cmd = [
         "ffmpeg", "-y", "-i", str(src),
-        "-af", "highpass=f=80,afftdn=nr=12,dynaudnorm=f=200:g=15",
+        "-af", "highpass=f=80,afftdn=nr=12,loudnorm=I=-16:LRA=11:TP=-1.5",
         "-ac", "1", "-ar", "16000",
         "-loglevel", "error",
         str(out),
@@ -294,7 +335,10 @@ def _remap_time(t: float, offsets: list[tuple[float, float]]) -> float:
 # ---------- MLX backend (macOS Apple Silicon) --------------------------------
 
 def _mlx_transcribe(
-    wav_path: Path, language: str | None, glossary: str | None = None
+    wav_path: Path,
+    language: str | None,
+    glossary: str | None = None,
+    prev_context: str | None = None,
 ) -> dict[str, Any]:
     import mlx_whisper
 
@@ -313,15 +357,21 @@ def _mlx_transcribe(
         file=sys.stderr, flush=True,
     )
     try:
+        # mlx-whisper НЕ поддерживает beam_search (NotImplementedError),
+        # поэтому ограничиваемся temperature fallback + no_speech_threshold.
+        # Beam-параметры используются только в faster-whisper.
         result = mlx_whisper.transcribe(
             str(pre),
             path_or_hf_repo=whisper_model_ref(),
             language=language,
             task="transcribe",
             word_timestamps=True,
-            initial_prompt=_build_initial_prompt(glossary),
+            initial_prompt=_build_initial_prompt(glossary, prev_context),
             condition_on_previous_text=False,
             temperature=_ASR_TEMPERATURES,
+            # Чуть жёстче режем «ничегонесказал» сегменты — на шумной записи
+            # снижает галлюцинации на тишине.
+            no_speech_threshold=0.6,
             verbose=False,
         )
     finally:
@@ -410,7 +460,10 @@ def _faster_reload_cpu_after_runtime_error() -> None:
 
 
 def _faster_transcribe(
-    wav_path: Path, language: str | None, glossary: str | None = None
+    wav_path: Path,
+    language: str | None,
+    glossary: str | None = None,
+    prev_context: str | None = None,
 ) -> dict[str, Any]:
     model = _faster_get_model()
     pre = _preprocess_audio(Path(wav_path))
@@ -425,11 +478,16 @@ def _faster_transcribe(
             str(pre),
             language=language,
             task="transcribe",
-            initial_prompt=_build_initial_prompt(glossary),
+            initial_prompt=_build_initial_prompt(glossary, prev_context),
             condition_on_previous_text=False,
             word_timestamps=True,
-            beam_size=5,
+            # Beam search: 10 кандидатов вместо 5 + patience=2 — точнее на
+            # сложных русских словах, ~1.3-1.5× медленнее.
+            beam_size=10,
+            best_of=5,
+            patience=2.0,
             temperature=_ASR_TEMPERATURES,
+            no_speech_threshold=0.6,
             vad_filter=True,
             vad_parameters={"min_silence_duration_ms": 500},
             hotwords=(glossary or None),
@@ -470,20 +528,28 @@ def _faster_transcribe(
 # ---------- единый интерфейс -------------------------------------------------
 
 def _backend_transcribe(
-    wav_path: Path, language: str | None, glossary: str | None = None
+    wav_path: Path,
+    language: str | None,
+    glossary: str | None = None,
+    prev_context: str | None = None,
 ) -> dict[str, Any]:
     if ASR_BACKEND == "mlx":
-        return _mlx_transcribe(wav_path, language, glossary)
-    return _faster_transcribe(wav_path, language, glossary)
+        return _mlx_transcribe(wav_path, language, glossary, prev_context)
+    return _faster_transcribe(wav_path, language, glossary, prev_context)
 
 
 def transcribe_chunk(
     wav_path: Path,
     language: str | None = "ru",
     glossary: str | None = None,
+    prev_context: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Транскрибация одного чанка."""
-    result = _backend_transcribe(Path(wav_path), language, glossary)
+    """Транскрибация одного чанка.
+
+    `prev_context` — последние слова предыдущего чанка (после фильтрации
+    галлюцинаций); подмешиваются в initial_prompt для связности на стыках.
+    """
+    result = _backend_transcribe(Path(wav_path), language, glossary, prev_context)
     return _filter_segments(result["segments"])
 
 
@@ -499,7 +565,7 @@ def transcribe_file(
     if progress_cb:
         progress_cb("asr:model_load", 0.0)
 
-    result = _backend_transcribe(wav, language, glossary)
+    result = _backend_transcribe(wav, language, glossary, prev_context=None)
 
     if progress_cb:
         progress_cb("asr:done", 1.0)
