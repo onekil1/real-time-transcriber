@@ -325,22 +325,57 @@ def _mlx_transcribe(
 
 _faster_model = None
 _faster_lock = threading.Lock()
+_faster_device = None  # реально использованное устройство ("cuda" / "cpu")
+
+
+def _is_cuda_runtime_error(err: BaseException) -> bool:
+    msg = str(err).lower()
+    return any(
+        s in msg
+        for s in ("cudnn", "cublas", "cuda", "cudart", "no cuda-capable")
+    )
+
+
+def _faster_load(device: str, compute_type: str):
+    from faster_whisper import WhisperModel
+
+    return WhisperModel(
+        whisper_model_ref(),
+        device=device,
+        compute_type=compute_type,
+    )
 
 
 def _faster_get_model():
-    global _faster_model
+    global _faster_model, _faster_device
     if _faster_model is not None:
         return _faster_model
     with _faster_lock:
-        if _faster_model is None:
-            from faster_whisper import WhisperModel
-
-            _faster_model = WhisperModel(
-                whisper_model_ref(),
-                device=ASR_DEVICE,
-                compute_type=ASR_COMPUTE_TYPE,
-            )
+        if _faster_model is not None:
+            return _faster_model
+        try:
+            _faster_model = _faster_load(ASR_DEVICE, ASR_COMPUTE_TYPE)
+            _faster_device = ASR_DEVICE
+        except Exception as e:  # noqa: BLE001
+            if ASR_DEVICE != "cpu" and _is_cuda_runtime_error(e):
+                print(
+                    f"[ASR] CUDA недоступна ({e}). Переключаюсь на CPU (int8).",
+                    file=sys.stderr, flush=True,
+                )
+                _faster_model = _faster_load("cpu", "int8")
+                _faster_device = "cpu"
+            else:
+                raise
     return _faster_model
+
+
+def _faster_reload_cpu_after_runtime_error() -> None:
+    """Если CUDA-библиотеки нашлись для load(), но упали на inference (например,
+    нет cuDNN) — перезагружаем модель на CPU и повторяем."""
+    global _faster_model, _faster_device
+    with _faster_lock:
+        _faster_model = _faster_load("cpu", "int8")
+        _faster_device = "cpu"
 
 
 def _faster_transcribe(
@@ -353,8 +388,9 @@ def _faster_transcribe(
         f"[ASR] Транскрибация аудио (модель локально, {whisper_model_ref()})...",
         file=sys.stderr, flush=True,
     )
-    try:
-        segments_iter, info = model.transcribe(
+
+    def _run_transcribe(m):
+        segments_iter, info = m.transcribe(
             str(pre),
             language=language,
             task="transcribe",
@@ -367,7 +403,7 @@ def _faster_transcribe(
             vad_parameters={"min_silence_duration_ms": 500},
             hotwords=(glossary or None),
         )
-        segs = [
+        return [
             {
                 "start": float(s.start),
                 "end": float(s.end),
@@ -375,7 +411,21 @@ def _faster_transcribe(
                 "words": _normalize_words(getattr(s, "words", None)),
             }
             for s in segments_iter
-        ]
+        ], info
+
+    try:
+        try:
+            segs, info = _run_transcribe(model)
+        except Exception as e:  # noqa: BLE001
+            if _faster_device != "cpu" and _is_cuda_runtime_error(e):
+                print(
+                    f"[ASR] Сбой CUDA-инференса ({e}). Перезагружаю модель на CPU.",
+                    file=sys.stderr, flush=True,
+                )
+                _faster_reload_cpu_after_runtime_error()
+                segs, info = _run_transcribe(_faster_get_model())
+            else:
+                raise
     finally:
         _cleanup_preprocessed(Path(wav_path), pre)
         print(

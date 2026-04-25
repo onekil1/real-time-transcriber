@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.1.8"
+version = "0.1.9"
 description = "Локальная транскрибация совещаний + автогенерация отчётов (macOS Apple Silicon / Windows + NVIDIA)"
 requires-python = ">=3.10,<3.13"
 dependencies = [
