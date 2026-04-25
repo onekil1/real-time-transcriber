@@ -61,6 +61,12 @@ def main() -> None:
 
     if no_menubar:
         try:
+            import webbrowser
+            host = "127.0.0.1" if HOST in ("0.0.0.0", "::", "") else HOST
+            webbrowser.open(f"http://{host}:{PORT}")
+        except Exception as e:  # noqa: BLE001
+            print(f"Не удалось открыть браузер автоматически: {e}", file=sys.stderr)
+        try:
             while True:
                 time.sleep(3600)
         except KeyboardInterrupt:
