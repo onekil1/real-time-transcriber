@@ -120,6 +120,16 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .head-subgroup-body.vertical .tmpl-chips { width: 100%; }
 .head-subgroup-body.vertical button { align-self: stretch; }
 
+/* Кнопка «Глоссарий» рядом с группами в шапке: высота как у группы,
+   подпись под названием — компактно, в одну рамку. */
+.head-glossary-btn {
+  align-self: stretch; padding: 4px 12px; line-height: 1.2;
+  white-space: normal; flex-direction: column; gap: 2px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel); color: var(--text); cursor: pointer;
+}
+.head-glossary-btn:hover { background: var(--panel-2); }
+
 
 .sessions { list-style: none; padding: 8px; margin: 0; overflow-y: auto; flex: 1; }
 .sessions li { padding: 10px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 4px; border: 1px solid transparent; }
