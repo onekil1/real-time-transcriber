@@ -68,8 +68,17 @@ def check() -> dict[str, Any]:
     }
 
 
+_REMOTE_URL = f"https://github.com/{GITHUB_REPO}.git"
+_DEFAULT_BRANCH = "main"
+
+
 def apply() -> dict[str, Any]:
-    """`git pull` + `uv sync`. Возвращает логи; пользователь должен перезапустить приложение."""
+    """Обновляет рабочее дерево до последнего коммита `main` и делает `uv sync`.
+
+    Если `.git` отсутствует (установка из ZIP) — инициализирует репозиторий и
+    делает `git fetch` + `git reset --hard origin/main`. Возвращает логи;
+    пользователь должен перезапустить приложение вручную.
+    """
 
     def _run(cmd: list[str]) -> dict[str, Any]:
         p = subprocess.run(
@@ -77,17 +86,39 @@ def apply() -> dict[str, Any]:
         )
         return {"cmd": " ".join(cmd), "code": p.returncode, "stdout": p.stdout, "stderr": p.stderr}
 
-    pull = _run(["git", "pull", "--ff-only"])
-    if pull["code"] != 0:
-        return {"ok": False, "step": "git pull", "log": [pull]}
+    log: list[dict[str, Any]] = []
+    git_dir = PROJECT_ROOT / ".git"
+
+    if git_dir.exists():
+        step = _run(["git", "pull", "--ff-only"])
+        log.append(step)
+        if step["code"] != 0:
+            return {"ok": False, "step": "git pull", "log": log}
+    else:
+        # Установка из ZIP — поднимаем git-репозиторий поверх существующих файлов.
+        for cmd, label in [
+            (["git", "init"], "git init"),
+            (["git", "remote", "add", "origin", _REMOTE_URL], "git remote add"),
+            (["git", "fetch", "origin", _DEFAULT_BRANCH], "git fetch"),
+            (["git", "reset", "--hard", f"origin/{_DEFAULT_BRANCH}"], "git reset"),
+            (["git", "branch", "--set-upstream-to", f"origin/{_DEFAULT_BRANCH}", _DEFAULT_BRANCH],
+             "git branch upstream"),
+        ]:
+            step = _run(cmd)
+            log.append(step)
+            # `branch --set-upstream-to` может упасть, если ветка ещё не создана —
+            # это не фатально, остальное уже отработало.
+            if step["code"] != 0 and label != "git branch upstream":
+                return {"ok": False, "step": label, "log": log}
 
     sync = _run(["uv", "sync"])
+    log.append(sync)
     if sync["code"] != 0:
-        return {"ok": False, "step": "uv sync", "log": [pull, sync]}
+        return {"ok": False, "step": "uv sync", "log": log}
 
     return {
         "ok": True,
-        "log": [pull, sync],
+        "log": log,
         "message": "Обновление установлено. Перезапустите приложение.",
         "version": current_version(),
     }
