@@ -120,13 +120,15 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .head-subgroup-body.vertical .tmpl-chips { width: 100%; }
 .head-subgroup-body.vertical button { align-self: stretch; }
 
-/* Кнопка «Глоссарий» рядом с группами в шапке. Растягивается по высоте
-   как полноценный head-group (через align-self:stretch + display:flex). */
+/* Кнопка «Глоссарий» в шапке: визуально и размерно ≡ .head-group.
+   Падинг и рамка совпадают, min-height гарантирует, что даже на своей
+   строке (после flex-wrap) она не схлопнется ниже соседних блоков. */
 .head-glossary-btn {
   align-self: stretch;
   display: flex; flex-direction: column; justify-content: center;
-  gap: 4px; padding: 6px 14px; line-height: 1.25;
-  white-space: normal; text-align: center;
+  gap: 4px; padding: 6px 14px;
+  min-height: 76px;
+  line-height: 1.25; white-space: normal; text-align: center;
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--panel); color: var(--text); cursor: pointer;
   font: inherit;
@@ -135,7 +137,7 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .head-glossary-btn .hg-title { font-size: 13px; font-weight: 500; }
 .head-glossary-btn .hg-note  {
   font-size: 10px; color: var(--muted); font-weight: normal;
-  max-width: 220px;
+  max-width: 240px;
 }
 
 
