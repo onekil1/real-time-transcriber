@@ -596,13 +596,26 @@ async function checkForUpdate() {
     if (btnEl.dataset.action === "restart") {
       btnEl.disabled = true;
       btnEl.textContent = "Перезагружаю…";
+      // Запоминаем текущую версию ДО рестарта — так мы поймём, что новый
+      // процесс реально поднялся (а не словили ответ от ещё живого старого).
+      let oldVersion = "";
+      try { oldVersion = (await api("/api/version")).version || ""; } catch {}
       try { await api("/api/restart", { method: "POST" }); } catch {}
-      // Сервер сейчас умрёт. Поллим /api/version, пока не оживёт.
+      // Сервер сейчас умрёт. Поллим /api/version, пока не вернётся НОВАЯ версия.
       const started = Date.now();
       const tick = async () => {
         try {
-          await api("/api/version");
-          location.reload();
+          const r = await fetch("/api/version", { cache: "no-store" });
+          if (r.ok) {
+            const j = await r.json();
+            // Версия должна отличаться от старой — иначе это всё ещё старый
+            // процесс, который не успел умереть.
+            if (j.version && j.version !== oldVersion) {
+              location.reload();
+              return;
+            }
+          }
+          throw new Error("still old");
         } catch {
           if (Date.now() - started > 60000) {
             btnEl.disabled = false;
