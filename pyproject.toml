@@ -1,6 +1,6 @@
 [project]
 name = "meeting-scribe"
-version = "0.1.9"
+version = "0.1.10"
 description = "Локальная транскрибация совещаний + автогенерация отчётов (macOS Apple Silicon / Windows + NVIDIA)"
 requires-python = ">=3.10,<3.13"
 dependencies = [
@@ -19,14 +19,16 @@ dependencies = [
     "silero-vad>=5.0; sys_platform == 'darwin'",
     "rumps>=0.4.0; sys_platform == 'darwin'",
     "pyobjc-framework-Cocoa>=10.0; sys_platform == 'darwin'",
-    # Windows (NVIDIA / CPU) — ASR через faster-whisper на CTranslate2
-    # Версии запинены: 1.2.x + 4.7.x на Windows ловят пустой генератор от
-    # model.transcribe() при vad_filter=True + word_timestamps=True (баг
-    # на стороне CT2/FW), поэтому держим стабильную пару 1.0.3 / 4.4.0.
-    # ctranslate2 4.4.0 импортирует pkg_resources → нужен setuptools < 81,
-    # потому что в setuptools 81+ pkg_resources убрали.
-    "faster-whisper==1.0.3; sys_platform == 'win32'",
-    "ctranslate2==4.4.0; sys_platform == 'win32'",
+    # Windows (NVIDIA / CPU) — ASR через faster-whisper на CTranslate2.
+    # ctranslate2 ≥ 4.5 нужна для Blackwell (RTX 50xx, sm_120).
+    # nvidia-cudnn-cu12 / nvidia-cublas-cu12 — поставляют DLL библиотеки CUDA,
+    # без которых ctranslate2 на Windows падает с 'Could not locate cudnn_*.dll'.
+    # setuptools<81 на случай, если установлен ctranslate2 < 4.5 (тогда
+    # импортируется pkg_resources, удалённый в setuptools 81).
+    "faster-whisper>=1.1,<2; sys_platform == 'win32'",
+    "ctranslate2>=4.5,<5; sys_platform == 'win32'",
+    "nvidia-cudnn-cu12>=9.1,<10; sys_platform == 'win32'",
+    "nvidia-cublas-cu12>=12.1; sys_platform == 'win32'",
     "setuptools>=68,<81; sys_platform == 'win32'",
 ]
 

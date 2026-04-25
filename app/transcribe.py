@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -10,6 +11,27 @@ from pathlib import Path
 from typing import Any
 
 import soundfile as sf
+
+
+def _register_cuda_dll_dirs() -> None:
+    """На Windows pip-пакеты nvidia-cudnn-cu12 / nvidia-cublas-cu12 кладут DLL
+    в .venv/Lib/site-packages/nvidia/<lib>/bin. ctranslate2 ищет их по системному
+    PATH, поэтому до его импорта нужно явно зарегистрировать эти директории."""
+    if sys.platform != "win32":
+        return
+    base = Path(sys.prefix) / "Lib" / "site-packages" / "nvidia"
+    if not base.exists():
+        return
+    for sub in ("cudnn", "cublas", "cuda_runtime", "cuda_nvrtc"):
+        bin_dir = base / sub / "bin"
+        if bin_dir.exists():
+            try:
+                os.add_dll_directory(str(bin_dir))
+            except (OSError, AttributeError):
+                pass
+
+
+_register_cuda_dll_dirs()
 
 from .config import (
     ASR_BACKEND,
