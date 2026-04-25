@@ -546,6 +546,7 @@ def app_restart():
     переживёт завершение текущего. На *nix — обычный detached subprocess.
     """
     import os
+    import shlex
     import subprocess
     import sys
     import threading
@@ -564,10 +565,19 @@ def app_restart():
             close_fds=True,
         )
     else:
+        # Mac/Linux: спавним через `bash -c "sleep 1; exec ..."`, чтобы child
+        # успел отвязаться от умирающего parent (rumps/AppKit на macOS не любит
+        # резкое наследование fds). DEVNULL на все потоки + start_new_session
+        # делают процесс полностью независимым.
+        cmd = f"sleep 1; exec {shlex.quote(sys.executable)} {shlex.quote(str(run_py))}"
         subprocess.Popen(
-            [sys.executable, str(run_py)],
+            ["/bin/bash", "-c", cmd],
             cwd=str(PROJECT_ROOT),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
             start_new_session=True,
+            close_fds=True,
         )
 
     # Даём ответу долететь до браузера, потом убиваем процесс целиком.

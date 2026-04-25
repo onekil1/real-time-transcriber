@@ -121,20 +121,22 @@ html, body { height: 100%; margin: 0; font-family: -apple-system, "SF Pro Text",
 .head-subgroup-body.vertical button { align-self: stretch; }
 
 /* Кнопка «Глоссарий» в шапке: совпадает с .head-group по padding/border.
-   Высоту задаёт собственный контент (3-строчное описание) — получается
-   ровно как у соседних блоков, без искусственных min-height. */
-.head-glossary-btn {
+   Высоту задаёт align-self: stretch внутри flex .head-groups — растягивается
+   до высоты соседних блоков. Селектор `button.head-glossary-btn` нужен,
+   чтобы перебить .detail-head button (height: 24px / font-size: 11px). */
+button.head-glossary-btn {
   align-self: stretch;
   display: flex; flex-direction: column; justify-content: center;
-  gap: 4px; padding: 6px 10px;
-  line-height: 1.25; white-space: normal; text-align: center;
+  gap: 4px; padding: 6px 22px; min-width: 200px;
+  height: auto; line-height: 1.25;
+  white-space: normal; text-align: center;
   border: 1px solid var(--border); border-radius: 8px;
   background: var(--panel); color: var(--text); cursor: pointer;
-  font: inherit;
+  font: inherit; font-size: 13px;
 }
-.head-glossary-btn:hover { background: var(--panel-2); }
-.head-glossary-btn .hg-title { font-size: 13px; font-weight: 500; }
-.head-glossary-btn .hg-note  {
+button.head-glossary-btn:hover { background: var(--panel-2); border-color: var(--accent); }
+button.head-glossary-btn .hg-title { font-size: 13px; font-weight: 500; }
+button.head-glossary-btn .hg-note  {
   font-size: 10px; color: var(--muted); font-weight: normal;
   line-height: 1.35;
 }
